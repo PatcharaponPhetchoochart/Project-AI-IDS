@@ -29,8 +29,8 @@ def main() -> None:
     sub = Subscriber(bus_port(cfg, TOPIC_PACKETS), TOPIC_PACKETS, host)
     pub = Publisher(bus_port(cfg, TOPIC_FEATURES), TOPIC_FEATURES, host)
     extractor = FeatureExtractor(cfg["feature"]["window_sec"])
-    log.info("subscribe '%s' จาก %s", TOPIC_PACKETS, sub.endpoint)
-    log.info("publish '%s' ที่ %s (window=%ss)", TOPIC_FEATURES, pub.endpoint, cfg["feature"]["window_sec"])
+    log.info("subscribed to '%s' at %s", TOPIC_PACKETS, sub.endpoint)
+    log.info("publishing '%s' at %s (window=%ss)", TOPIC_FEATURES, pub.endpoint, cfg["feature"]["window_sec"])
 
     total = 0
     last_log, last_total = time.time(), 0
@@ -40,20 +40,20 @@ def main() -> None:
                 try:
                     vec = extractor.extract(meta)
                 except Exception as e:  # noqa: BLE001
-                    log.warning("แปลง feature ไม่ได้: %s (%s)", e, meta)
+                    log.warning("feature extraction failed: %s (%s)", e, meta)
                     continue
                 pub.send(FeatureMsg(meta=meta, vector=vec, feature_version=FEATURE_VERSION).to_dict())
                 total += 1
             now = time.time()
             if now - last_log >= 30:
-                log.info("แปลงแล้วรวม %d packets (+%d)", total, total - last_total)
+                log.info("processed %d packets total (+%d)", total, total - last_total)
                 last_log, last_total = now, total
     except KeyboardInterrupt:
-        log.info("กำลังปิด ...")
+        log.info("shutting down ...")
     finally:
         sub.close()
         pub.close()
-        log.info("ปิดเรียบร้อย")
+        log.info("stopped")
 
 
 if __name__ == "__main__":

@@ -28,6 +28,22 @@ WIN = sys.platform.startswith("win")
 COLORS = {"capture": "36", "feature": "33", "detection": "35", "alert": "31", "monitor": "32"}
 
 
+def enable_ansi_colors() -> None:
+    """Windows console แบบเก่าไม่แปลรหัสสี ANSI (เห็นเป็น ←[36m) -> เปิด Virtual Terminal Processing"""
+    if not WIN:
+        return
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        for std in (-11, -12):          # STD_OUTPUT_HANDLE, STD_ERROR_HANDLE
+            h = k.GetStdHandle(std)
+            mode = ctypes.c_uint32()
+            if k.GetConsoleMode(h, ctypes.byref(mode)):
+                k.SetConsoleMode(h, mode.value | 0x0004)   # ENABLE_VIRTUAL_TERMINAL_PROCESSING
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def is_admin() -> bool:
     try:
         if WIN:
@@ -49,24 +65,25 @@ def pump(name: str, stream) -> None:
 
 def main() -> int:
     force_utf8()
+    enable_ansi_colors()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--monitor", choices=["window", "inline", "off"], default="window" if WIN else "off",
-                    help="วิธีรัน monitor-service (ค่าเริ่มต้น: Windows=window, อื่นๆ=off)")
+                    help="how to run monitor-service (default: Windows=window, others=off)")
     args = ap.parse_args()
 
     cfg = load_config()
     dcfg = cfg["detection"]
     missing = [str(resolve_path(dcfg[k])) for k in ("model_path", "scaler_path", "meta_path") if not resolve_path(dcfg[k]).exists()]
     if missing:
-        print("ไม่พบไฟล์โมเดล:", *missing, sep="\n  ")
-        print("กรุณาเทรนโมเดลก่อน (ทำครั้งเดียว):\n"
-              "  python -m notebook training/train.ipynb   แล้วกด Run All\n"
-              "  (หรือแบบ command line: python training/train.py)")
+        print("Model files not found:", *missing, sep="\n  ")
+        print("Train the model first (one time):\n"
+              "  python -m notebook training/train.ipynb   then Run All\n"
+              "  (or command line: python training/train.py)")
         return 2
 
     if not is_admin():
-        print("\x1b[33m[คำเตือน] ไม่ได้รันด้วยสิทธิ์ " + ("Administrator" if WIN else "root") +
-              " — capture-service อาจดัก packet ไม่ได้ (เปิด terminal แบบ Run as administrator / ใช้ sudo)\x1b[0m")
+        print("\x1b[33m[WARNING] not running as " + ("Administrator" if WIN else "root") +
+              " - capture may fail (open the terminal with Run as administrator / use sudo)\x1b[0m")
 
     env = dict(os.environ, PYTHONUTF8="1", PYTHONUNBUFFERED="1",
                PYTHONPATH=os.pathsep.join([str(SYSTEM), str(ROOT)]))
@@ -96,7 +113,7 @@ def main() -> int:
     start("detection")
     start("feature")
     start("capture")
-    print(f"\x1b[1mHome NIDS เริ่มทำงานแล้ว ({len(procs)} services) — กด Ctrl+C เพื่อปิดทั้งหมด\x1b[0m", flush=True)
+    print(f"\x1b[1mHome NIDS started ({len(procs)} services) - press Ctrl+C to stop all\x1b[0m", flush=True)
 
     code = 0
     try:
@@ -105,7 +122,7 @@ def main() -> int:
             for name, p in procs.items():
                 rc = p.poll()
                 if rc is not None:
-                    print(f"\x1b[31m[run_all] service '{name}' จบการทำงาน (exit code {rc}) — ปิดระบบทั้งหมด\x1b[0m", flush=True)
+                    print(f"\x1b[31m[run_all] service '{name}' exited (code {rc}) - stopping all services\x1b[0m", flush=True)
                     code = rc or 1
                     raise KeyboardInterrupt
     except KeyboardInterrupt:
@@ -127,7 +144,7 @@ def main() -> int:
                 p.wait(3)
             except subprocess.TimeoutExpired:
                 p.kill()
-        print("ปิดทุก service แล้ว", flush=True)
+        print("All services stopped", flush=True)
     return code
 
 

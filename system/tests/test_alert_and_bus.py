@@ -35,7 +35,7 @@ def test_cooldown_merges_repeated_alerts_and_counts(tmp_path):
     now[0] += 20                                          # หมด cooldown
     mgr.handle(det(ts=1030.0))
     assert mgr.db.execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 3
-    assert "รวม alert" in out.getvalue()                 # มีบรรทัดสรุปจำนวนครั้งที่ถูกรวม
+    assert "alerts in" in out.getvalue()                 # มีบรรทัดสรุปจำนวนครั้งที่ถูกรวม
     mgr.close()
     assert sqlite3.connect(tmp_path / "a.db").execute("SELECT COUNT(*) FROM alerts").fetchone()[0] == 3
 
@@ -59,7 +59,7 @@ def test_reasons():
     vec = [0.0] * N_FEATURES
     vec[FEATURE_NAMES.index("ctx_low_ports")] = 40
     tcp = {**ping, "proto": "TCP", "tcp_flags": 2, "icmp_type": None}
-    assert "สแกน port" in explain(tcp, vec)
+    assert "Port scan" in explain(tcp, vec)
 
 
 def free_port():
@@ -96,3 +96,18 @@ def test_ping_only_mode_flags_only_icmp_echo():
     assert not decide(0.50, 0.63, ping, True)
     # ปิด ping_only: ใช้ score อย่างเดียว
     assert decide(0.71, 0.63, unreach, False) and decide(0.64, 0.63, quic, False)
+
+
+def test_realtime_mode_prints_every_packet_but_keeps_one_db_row(tmp_path):
+    now = [100.0]
+    out = io.StringIO()
+    mgr = AlertManager(tmp_path / "r.db", cooldown=10, console=Console(file=out, width=160),
+                       clock=lambda: now[0], realtime=True)
+    for i in range(4):                                    # ping 4 ครั้ง ห่างกัน 1 วินาที
+        mgr.handle(det(ts=1000.0 + i))
+        now[0] += 1
+    text = out.getvalue()
+    assert text.count("ALERT") == 4                       # ขึ้นทุก packet แบบ realtime
+    assert "ALERT #2" in text and "ALERT #4" in text and "ICMP echo request" in text
+    assert mgr.db.execute("SELECT COUNT(*), SUM(count) FROM alerts").fetchone() == (1, 4)
+    mgr.close()

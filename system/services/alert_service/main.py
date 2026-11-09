@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_alerts_src ON alerts(src_ip);
 class AlertManager:
     """จัดการ cooldown ต่อ src IP + เขียน DB + แสดงผล (แยกออกมาเพื่อให้ทดสอบง่าย)"""
 
-    def __init__(self, db_path: Path, cooldown: float, console: Console, clock=time.time):
+    def __init__(self, db_path: Path, cooldown: float, console: Console, clock=time.time, realtime: bool = False):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(db_path)
         self.db.executescript(SCHEMA)
@@ -54,6 +54,9 @@ class AlertManager:
         self.cooldown = cooldown
         self.console = console
         self.clock = clock
+        # realtime=True: แสดงทุก packet ที่แปลกทันที (บรรทัดสั้นพร้อมลำดับครั้งที่) แม้อยู่ใน cooldown
+        # DB ยังรวมเป็นแถวเดียวต่อกลุ่มเหมือนเดิม
+        self.realtime = realtime
         # (src_ip, dst_ip, proto) -> {start (wall clock), count, row_id, max_score, last_ts, meta}
         self.groups: dict[tuple, dict] = {}
 
@@ -81,6 +84,8 @@ class AlertManager:
             self.db.execute("UPDATE alerts SET count=?, last_ts=?, score=? WHERE id=?",
                             (g["count"], meta["ts"], g["max_score"], g["row_id"]))
             self.db.commit()
+            if self.realtime:
+                self.print_repeat(meta, det.score, g["count"])
             return
         self.flush_group(key)  # กลุ่มเก่าหมดอายุแล้ว: สรุปก่อนเริ่มกลุ่มใหม่
         reason = explain(meta, det.vector)
@@ -102,7 +107,19 @@ class AlertManager:
             f"{endpoint(meta['dst_ip'], meta.get('dst_port'))}[/]  "
             f"[red]{meta.get('proto')}[/]  [dim red]iface={meta.get('iface')}[/]"
         )
-        c.print(f"        [red]เหตุผล:[/] {reason}   [red]score={score:.3f}[/] [dim](threshold {threshold:.3f})[/]")
+        c.print(f"        [red]Reason:[/] {reason}   [red]score={score:.3f}[/] [dim](threshold {threshold:.3f})[/]")
+
+    def print_repeat(self, meta, score, count) -> None:
+        """โหมด realtime: packet ซ้ำในกลุ่มเดิม -> บรรทัดสั้น 1 บรรทัดต่อ packet"""
+        detail = meta.get("proto")
+        if detail == "ICMP":
+            detail = {8: "ICMP echo request", 0: "ICMP echo reply"}.get(meta.get("icmp_type"),
+                                                                        f"ICMP type {meta.get('icmp_type')}")
+        self.console.print(
+            f"[red] ALERT #{count:<3}[/] [red]{fmt_time(meta['ts'])}[/]  "
+            f"[red]{endpoint(meta['src_ip'], meta.get('src_port'))} → {endpoint(meta['dst_ip'], meta.get('dst_port'))}[/]  "
+            f"[red]{detail}[/]  [dim]score={score:.3f}[/]"
+        )
 
     def flush_group(self, key: tuple) -> None:
         """พิมพ์สรุปของกลุ่มที่ปิดแล้ว ถ้ามี packet ซ้ำมากกว่า 1"""
@@ -110,8 +127,8 @@ class AlertManager:
         if g and g["count"] > 1:
             src, dst, proto = key
             self.console.print(
-                f"[red]  └─ รวม alert {proto} จาก {src}{'' if dst == '*' else ' → ' + dst} ทั้งหมด [bold]{g['count']}[/bold] ครั้ง "
-                f"ใน {max(self.clock() - g['start'], 0):.0f} วินาที (score สูงสุด {g['max_score']:.3f})[/]"
+                f"[red]  └─ {proto} {src}{'' if dst == '*' else ' → ' + dst}: [bold]{g['count']}[/bold] alerts "
+                f"in {max(self.clock() - g['start'], 0):.0f}s (max score {g['max_score']:.3f})[/]"
             )
 
     def tick(self) -> None:
@@ -133,11 +150,12 @@ def main() -> None:
     console = Console()
 
     db_path = resolve_path(acfg["db_path"])
-    mgr = AlertManager(db_path, float(acfg["cooldown_sec"]), console)
+    realtime = bool(acfg.get("realtime", True))
+    mgr = AlertManager(db_path, float(acfg["cooldown_sec"]), console, realtime=realtime)
     sub = Subscriber(bus_port(cfg, TOPIC_DETECTIONS), TOPIC_DETECTIONS, cfg["bus"]["host"])
-    log.info("subscribe '%s' จาก %s (แสดงเฉพาะ is_anomaly=true)", TOPIC_DETECTIONS, sub.endpoint)
-    log.info("บันทึก alert ลง SQLite: %s | cooldown %ss", db_path, acfg["cooldown_sec"])
-    console.print("[green]alert-service พร้อมทำงาน — รอ alert ...[/]")
+    log.info("subscribed to '%s' at %s (anomalies only)", TOPIC_DETECTIONS, sub.endpoint)
+    log.info("saving alerts to SQLite: %s | cooldown %ss | realtime=%s", db_path, acfg["cooldown_sec"], realtime)
+    console.print("[green]alert-service ready - waiting for alerts ...[/]")
 
     try:
         while True:
@@ -146,11 +164,11 @@ def main() -> None:
                     mgr.handle(DetectionMsg.from_dict(d))
             mgr.tick()
     except KeyboardInterrupt:
-        log.info("กำลังปิด ...")
+        log.info("shutting down ...")
     finally:
         mgr.close()
         sub.close()
-        log.info("ปิดเรียบร้อย")
+        log.info("stopped")
 
 
 if __name__ == "__main__":

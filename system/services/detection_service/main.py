@@ -31,14 +31,14 @@ def load_model(dcfg: dict, log):
     meta_p = resolve_path(dcfg["meta_path"])
     missing = [str(p) for p in (model_p, scaler_p, meta_p) if not p.exists()]
     if missing:
-        log.error("ไม่พบไฟล์โมเดล: %s", ", ".join(missing))
-        log.error("กรุณาเทรนโมเดลก่อน: เปิด training/train.ipynb แล้วกด Run All (หรือ python training/train.py)")
+        log.error("model files not found: %s", ", ".join(missing))
+        log.error("train the model first: open training/train.ipynb and Run All (or: python training/train.py)")
         sys.exit(2)
     model = joblib.load(model_p)
     scaler = joblib.load(scaler_p)
     meta = json.loads(meta_p.read_text(encoding="utf-8"))
     if meta.get("feature_names") != FEATURE_NAMES or meta.get("feature_version") != FEATURE_VERSION:
-        log.error("feature ของโมเดลไม่ตรงกับ shared/features.py ปัจจุบัน — ต้องเทรนโมเดลใหม่ (python training/train.py)")
+        log.error("model features do not match shared/features.py - retrain the model (training/train.ipynb)")
         sys.exit(2)
     return model, scaler, meta
 
@@ -73,17 +73,17 @@ def main() -> None:
 
     model, scaler, meta = load_model(dcfg, log)
     threshold = resolve_threshold(dcfg, meta)
-    log.info("โหลดโมเดลแล้ว (เทรนเมื่อ %s, %s ตัวอย่าง)", meta.get("trained_at"), meta.get("n_samples"))
-    log.info("threshold = %.4f (%s)", threshold, "จาก system/models/meta.json" if str(dcfg.get("threshold")).lower() == "auto" else "จาก config")
+    log.info("model loaded (trained %s, %s samples)", meta.get("trained_at"), meta.get("n_samples"))
+    log.info("threshold = %.4f (%s)", threshold, "from system/models/meta.json" if str(dcfg.get("threshold")).lower() == "auto" else "from config")
 
     sub = Subscriber(bus_port(cfg, TOPIC_FEATURES), TOPIC_FEATURES, host)
     pub = Publisher(bus_port(cfg, TOPIC_DETECTIONS), TOPIC_DETECTIONS, host)
-    log.info("subscribe '%s' จาก %s", TOPIC_FEATURES, sub.endpoint)
-    log.info("publish '%s' ที่ %s", TOPIC_DETECTIONS, pub.endpoint)
+    log.info("subscribed to '%s' at %s", TOPIC_FEATURES, sub.endpoint)
+    log.info("publishing '%s' at %s", TOPIC_DETECTIONS, pub.endpoint)
 
     ping_only = bool(dcfg.get("ping_only", False))
     if ping_only:
-        log.info("โหมด ping_only: แจ้งเตือนเฉพาะ ping (ICMP echo) — traffic อื่นจะไม่ถูกมองว่าแปลก")
+        log.info("ping_only mode: alerting on ping (ICMP echo) only - other traffic is never flagged")
     batch = int(dcfg.get("batch_size", 256))
     total = anomalies = 0
     last_log, last_total = time.time(), 0
@@ -102,14 +102,14 @@ def main() -> None:
                 total += len(msgs)
             now = time.time()
             if now - last_log >= 30:
-                log.info("ให้คะแนนแล้วรวม %d packets (+%d) แปลก %d", total, total - last_total, anomalies)
+                log.info("scored %d packets total (+%d), anomalies %d", total, total - last_total, anomalies)
                 last_log, last_total = now, total
     except KeyboardInterrupt:
-        log.info("กำลังปิด ...")
+        log.info("shutting down ...")
     finally:
         sub.close()
         pub.close()
-        log.info("ปิดเรียบร้อย")
+        log.info("stopped")
 
 
 if __name__ == "__main__":

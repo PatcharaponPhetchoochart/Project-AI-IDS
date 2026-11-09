@@ -14,9 +14,9 @@ scapy_env()
 
 from scapy.all import conf  # noqa: E402
 
-print(f"loopback ของระบบ (ใช้ชื่อ 'loopback' ใน config ได้): {conf.loopback_name}")
-print(f"interface หลักของ Scapy (ใช้ชื่อ 'default' ได้):     {getattr(conf.iface, 'name', conf.iface)}\n")
+print(f"system loopback (use 'loopback' in config): {conf.loopback_name}")
+print(f"Scapy default interface (use 'default'):    {getattr(conf.iface, 'name', conf.iface)}\n")
 print(conf.ifaces)
 if sys.platform.startswith("win"):
-    print("\nหมายเหตุ: ถ้าไม่เห็น Npcap Loopback Adapter ให้ติดตั้ง Npcap ใหม่และติ๊ก "
-          "'Support loopback traffic' (ดู README)")
+    print("\nNote: if NPF_Loopback is missing, reinstall Npcap with "
+          "'Support loopback traffic' checked (see README)")

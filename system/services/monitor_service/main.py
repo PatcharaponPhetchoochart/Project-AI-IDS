@@ -44,8 +44,8 @@ def main() -> None:
     mcfg = cfg["monitor"]
     console = Console(highlight=False)
     sub = Subscriber(bus_port(cfg, TOPIC_DETECTIONS), TOPIC_DETECTIONS, cfg["bus"]["host"])
-    log.info("subscribe '%s' จาก %s", TOPIC_DETECTIONS, sub.endpoint)
-    console.print("[green]monitor-service พร้อมทำงาน — packet ปกติสีเทา, packet แปลกสีแดง[/]")
+    log.info("subscribed to '%s' at %s", TOPIC_DETECTIONS, sub.endpoint)
+    console.print("[green]monitor-service ready - normal packets grey, anomalies red[/]")
 
     show_normal = bool(mcfg.get("show_normal", True))
     max_rate = float(mcfg.get("max_normal_lines_per_sec", 40))
@@ -62,7 +62,7 @@ def main() -> None:
                 now = int(time.time())
                 if now != sec:
                     if hidden:
-                        console.print(f"[dim]  ... ซ่อน packet ปกติ {hidden} ตัวในวินาทีก่อนหน้า (จำกัด {max_rate:.0f} บรรทัด/วินาที)[/]")
+                        console.print(f"[dim]  ... {hidden} normal packets hidden in the last second (limit {max_rate:.0f} lines/s)[/]")
                     sec, shown_in_sec, hidden = now, 0, 0
                 if shown_in_sec < max_rate:
                     console.print(f"[grey50]{line}[/]")
@@ -70,10 +70,10 @@ def main() -> None:
                 else:
                     hidden += 1
     except KeyboardInterrupt:
-        log.info("กำลังปิด ...")
+        log.info("shutting down ...")
     finally:
         sub.close()
-        log.info("ปิดเรียบร้อย")
+        log.info("stopped")
 
 
 if __name__ == "__main__":

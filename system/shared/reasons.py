@@ -20,27 +20,27 @@ def explain(meta: dict, vector: list | None = None) -> str:
     if proto == "ICMP":
         t = meta.get("icmp_type")
         if t == 8:
-            return "ICMP echo request (ping) ไม่พบใน traffic ปกติ"
+            return "ICMP echo request (ping) - not seen in normal traffic"
         if t == 0:
-            return "ICMP echo reply (ตอบ ping) ไม่พบใน traffic ปกติ"
+            return "ICMP echo reply (ping response) - not seen in normal traffic"
         name = _ICMP_NAMES.get(t, f"type {t}")
-        return f"ICMP {name} ผิดปกติ ไม่พบใน traffic ปกติ"
+        return f"Unusual ICMP {name} - not seen in normal traffic"
 
     ports = feats.get("ctx_low_ports", 0)
     ips = feats.get("ctx_dst_ips", 0)
     if ports >= 15:
-        return f"สแกน port: src นี้ยิงไป {int(ports)} port ของ service ไม่ซ้ำภายใน 5 วินาที"
+        return f"Port scan: {int(ports)} distinct service ports from this source within 5s"
     if ips >= 25:
-        return f"สแกน host: src นี้ติดต่อ {int(ips)} IP ไม่ซ้ำภายใน 5 วินาที"
+        return f"Host scan: {int(ips)} distinct IPs contacted within 5s"
 
     if proto == "TCP" and flags is not None:
         if flags == 0:
-            return "TCP NULL scan (ไม่มี flag ใดเลย)"
+            return "TCP NULL scan (no flags set)"
         if flags & 0x03 == 0x03:
-            return "TCP SYN+FIN (flag ผิดปกติ)"
+            return "TCP SYN+FIN (invalid flag combination)"
         if flags & 0x29 == 0x29:
             return "TCP Xmas scan (FIN+PSH+URG)"
 
     if proto == "OTHER":
-        return "โปรโตคอลที่ไม่พบใน traffic ปกติ"
-    return "รูปแบบ traffic แตกต่างจาก baseline ปกติ"
+        return "Protocol not seen in normal traffic"
+    return "Traffic pattern differs from normal baseline"

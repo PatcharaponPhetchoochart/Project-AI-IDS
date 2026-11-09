@@ -53,7 +53,8 @@ detection:
 
 # ---------- alert-service ----------
 alert:
-  cooldown_sec: 10                 # รวม alert ซ้ำจาก src IP เดียวกันภายในกี่วินาที
+  cooldown_sec: 10                 # รวม alert ซ้ำจาก src IP เดียวกันภายในกี่วินาที (ใน DB และบรรทัดสรุป)
+  realtime: true                   # true = แสดงทุก packet ที่แปลกทันที (ALERT #2, #3 ...) | false = แสดงครั้งแรกแล้วสรุปตอนจบ cooldown
   db_path: "data/alerts.db"
 
 # ---------- monitor-service ----------

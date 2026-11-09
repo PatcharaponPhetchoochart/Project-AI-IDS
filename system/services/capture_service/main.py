@@ -42,7 +42,7 @@ def resolve_interfaces(names: list[str], conf, log) -> list[tuple[str, object]]:
             result.append((key, resolved))
             log.info("interface '%s' -> %s", key, getattr(resolved, "name", resolved))
         except Exception as e:  # noqa: BLE001
-            log.error("ไม่พบ interface '%s' (%s) — ข้ามไป ดูรายชื่อที่ใช้ได้ด้วย: python system/scripts/list_interfaces.py", key, e)
+            log.error("interface '%s' not found (%s) - skipped. List valid names: python system/scripts/list_interfaces.py", key, e)
     return result
 
 
@@ -85,7 +85,7 @@ def main() -> None:
 
     ifaces = resolve_interfaces(ccfg["interfaces"], conf, log)
     if not ifaces:
-        log.error("ไม่มี interface ที่ใช้ได้เลย — แก้ capture.interfaces ใน config/config.yaml")
+        log.error("no usable interface - fix capture.interfaces in config/config.yaml")
         sys.exit(2)
 
     # กรอง IPv4 และตัด port ของ ZMQ ออก ไม่งั้นจะดักข้อความของระบบเองบน loopback วนไม่รู้จบ
@@ -104,7 +104,7 @@ def main() -> None:
     pub = None
     if mode in ("zmq", "both"):
         pub = Publisher(bus_port(cfg, TOPIC_PACKETS), TOPIC_PACKETS, cfg["bus"]["host"])
-        log.info("publish topic '%s' ที่ %s", TOPIC_PACKETS, pub.endpoint)
+        log.info("publishing topic '%s' at %s", TOPIC_PACKETS, pub.endpoint)
 
     csv_file = csv_writer = None
     if mode in ("csv", "both"):
@@ -115,7 +115,7 @@ def main() -> None:
         csv_writer = csv.DictWriter(csv_file, fieldnames=PACKET_FIELDS)
         if new:
             csv_writer.writeheader()
-        log.info("บันทึก metadata ลง CSV: %s", path)
+        log.info("writing packet metadata to CSV: %s", path)
 
     lock = threading.Lock()
     counters = {"captured": 0, "skipped": 0}
@@ -140,7 +140,7 @@ def main() -> None:
                     if csv_writer is not None:
                         csv_writer.writerow(meta)
             except Exception as e:  # noqa: BLE001  packet เดียวพังต้องไม่ทำให้ทั้ง service ล้ม
-                log.debug("parse packet ล้มเหลว: %s", e)
+                log.debug("failed to parse packet: %s", e)
         return handle
 
     sniffers = []
@@ -149,11 +149,11 @@ def main() -> None:
         try:
             s.start()
             sniffers.append((label, s))
-            log.info("เริ่มดัก packet บน '%s'", label)
+            log.info("capturing on '%s'", label)
         except Exception as e:  # noqa: BLE001
-            log.error("เปิด '%s' ไม่ได้: %s (ต้องรันด้วย root/Administrator และติดตั้ง Npcap/libpcap)", label, e)
+            log.error("cannot open '%s': %s (run as root/Administrator and install Npcap/libpcap)", label, e)
     if not sniffers:
-        log.error("เปิดดัก packet ไม่ได้สักตัว — ออก")
+        log.error("no interface could be opened - exiting")
         sys.exit(2)
 
     try:
@@ -162,15 +162,15 @@ def main() -> None:
         while True:
             time.sleep(interval)
             n = counters["captured"]
-            log.info("ดักได้รวม %d packets (+%d ใน %.0fs)", n, n - last, interval)
+            log.info("captured %d packets total (+%d in %.0fs)", n, n - last, interval)
             last = n
             if csv_file:
                 csv_file.flush()
             dead = [lbl for lbl, s in sniffers if s.thread is not None and not s.thread.is_alive()]
             if dead:
-                log.error("sniffer หยุดทำงาน: %s", dead)
+                log.error("sniffer stopped: %s", dead)
     except KeyboardInterrupt:
-        log.info("กำลังปิด ...")
+        log.info("shutting down ...")
     finally:
         for _, s in sniffers:
             try:
@@ -182,7 +182,7 @@ def main() -> None:
             csv_file.close()
         if pub:
             pub.close()
-        log.info("ปิดเรียบร้อย")
+        log.info("stopped")
 
 
 if __name__ == "__main__":
