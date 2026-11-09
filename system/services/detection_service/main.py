@@ -32,7 +32,7 @@ def load_model(dcfg: dict, log):
     missing = [str(p) for p in (model_p, scaler_p, meta_p) if not p.exists()]
     if missing:
         log.error("ไม่พบไฟล์โมเดล: %s", ", ".join(missing))
-        log.error("กรุณาเทรนโมเดลก่อน:  python training/generate_data.py  แล้วตามด้วย  python training/train.py")
+        log.error("กรุณาเทรนโมเดลก่อน: เปิด training/train.ipynb แล้วกด Run All (หรือ python training/train.py)")
         sys.exit(2)
     model = joblib.load(model_p)
     scaler = joblib.load(scaler_p)

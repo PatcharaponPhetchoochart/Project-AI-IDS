@@ -59,7 +59,9 @@ def main() -> int:
     missing = [str(resolve_path(dcfg[k])) for k in ("model_path", "scaler_path", "meta_path") if not resolve_path(dcfg[k]).exists()]
     if missing:
         print("ไม่พบไฟล์โมเดล:", *missing, sep="\n  ")
-        print("กรุณาเทรนก่อน:\n  python training/generate_data.py\n  python training/train.py")
+        print("กรุณาเทรนโมเดลก่อน (ทำครั้งเดียว):\n"
+              "  python -m notebook training/train.ipynb   แล้วกด Run All\n"
+              "  (หรือแบบ command line: python training/train.py)")
         return 2
 
     if not is_admin():
