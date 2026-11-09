@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.cache/
+.pytest_cache/
+.ipynb_checkpoints/
+data/alerts.db
+data/captured_packets.csv
+data/score_plot.png
+
+# dataset ใหญ่ ไม่ควรเก็บใน git
+training/pcap/**/*.pcap
+training/pcap/**/*.pcapng
+data/pcap_csv/
+
+# โมเดล (สร้างใหม่ได้ด้วย training/train.ipynb ~10 วินาที) และไฟล์ที่ generate ซ้ำได้
+system/models/*
+!system/models/.gitkeep
+data/normal_features.csv

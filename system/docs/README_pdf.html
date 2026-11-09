@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Home NIDS — คู่มือ</title>
+<style>
+  @page { size: A4; margin: 13mm 13mm 14mm 13mm; }
+  :root {
+    --ink: #1f2430; --muted: #5b6372; --line: #dfe3ea;
+    --blue: #2563eb;   --blue-bg: #eaf1ff;     /* ภาพรวม / การทำงาน */
+    --purple: #7c3aed; --purple-bg: #f2ecff;   /* โครงสร้างไฟล์ */
+    --green: #059669;  --green-bg: #e6f7f1;    /* วิธีใช้งาน */
+    --orange: #ea580c; --orange-bg: #fff1e8;   /* การเทรนโมเดล */
+    --red: #dc2626;    --red-bg: #fdecec;      /* ข้อควรระวัง */
+  }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Leelawadee UI", "Tahoma", sans-serif; color: var(--ink); font-size: 10.2pt; line-height: 1.5; margin: 0; background: #fff; }
+  code, pre { font-family: "Consolas", "Cascadia Mono", monospace; font-size: 8.8pt; }
+  code { background: #f1f3f7; padding: 0 3px; border-radius: 3px; }
+  pre { background: #1e2533; color: #e8ecf3; padding: 7px 10px; border-radius: 6px; margin: 5px 0; white-space: pre-wrap; line-height: 1.45; }
+  pre .c { color: #8fa0b8; }
+  h1 { font-size: 21pt; margin: 0; letter-spacing: -0.3px; }
+  h2 { font-size: 13.5pt; margin: 0 0 6px; padding: 5px 10px; border-radius: 6px; color: #fff; display: flex; align-items: center; gap: 8px; }
+  h3 { font-size: 10.8pt; margin: 9px 0 3px; }
+  p { margin: 3px 0; }
+  ul, ol { margin: 3px 0; padding-left: 20px; }
+  li { margin: 1px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 9.3pt; }
+  th, td { border: 1px solid var(--line); padding: 3px 7px; text-align: left; vertical-align: top; }
+  th { background: #f5f6f9; }
+  section { margin-bottom: 11px; }
+  .page-break { break-before: page; }
+  .num { background: rgba(255,255,255,.25); border-radius: 4px; padding: 0 6px; font-size: 10.5pt; }
+
+  /* หมวดสี */
+  .blue h2 { background: var(--blue); }     .blue h3 { color: var(--blue); }
+  .purple h2 { background: var(--purple); } .purple h3 { color: var(--purple); }
+  .green h2 { background: var(--green); }   .green h3 { color: var(--green); }
+  .orange h2 { background: var(--orange); } .orange h3 { color: var(--orange); }
+  .red h2 { background: var(--red); }       .red h3 { color: var(--red); }
+
+  .header { display: flex; justify-content: space-between; align-items: flex-end; gap: 18px; border-bottom: 3px solid var(--ink); padding-bottom: 6px; margin-bottom: 8px; }
+  .sub { color: var(--muted); font-size: 10pt; }
+  .legend { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 8.8pt; }
+  .tag { padding: 1px 8px; border-radius: 10px; font-weight: 600; }
+  .t-blue { background: var(--blue-bg); color: var(--blue); }
+  .t-purple { background: var(--purple-bg); color: var(--purple); }
+  .t-green { background: var(--green-bg); color: var(--green); }
+  .t-orange { background: var(--orange-bg); color: var(--orange); }
+  .t-red { background: var(--red-bg); color: var(--red); }
+
+  .box { border-radius: 6px; padding: 6px 10px; margin: 5px 0; }
+  .box.blue-bg { background: var(--blue-bg); border-left: 4px solid var(--blue); }
+  .box.orange-bg { background: var(--orange-bg); border-left: 4px solid var(--orange); }
+  .box.red-bg { background: var(--red-bg); border-left: 4px solid var(--red); }
+  .box.green-bg { background: var(--green-bg); border-left: 4px solid var(--green); }
+
+  /* แผนภาพ pipeline */
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 6px 0 4px; }
+  .node { flex: 1; border: 1.5px solid var(--blue); border-radius: 6px; padding: 4px 5px; text-align: center; background: #fff; font-size: 8.6pt; line-height: 1.3; }
+  .node b { display: block; font-size: 9.3pt; color: var(--blue); }
+  .arrow { display: flex; flex-direction: column; justify-content: center; align-items: center; min-width: 46px; color: var(--muted); font-size: 7.6pt; }
+  .arrow span:first-child { font-size: 13pt; line-height: 1; color: var(--blue); }
+  .node.out { border-color: var(--red); }
+  .node.out b { color: var(--red); }
+  .stack { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+
+  /* ขั้นตอนเทรน */
+  .steps { display: flex; gap: 4px; margin: 6px 0; }
+  .step code { word-break: break-all; }
+  .step { flex: 1 1 0; min-width: 0; background: var(--orange-bg); border-top: 3px solid var(--orange); border-radius: 0 0 6px 6px; padding: 4px 6px; font-size: 8.7pt; line-height: 1.35; }
+  .step b { color: var(--orange); display: block; font-size: 9.4pt; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .path { border: 1.5px solid var(--orange); border-radius: 6px; padding: 5px 9px; }
+  .path h3 { margin-top: 0; }
+  .footer { color: var(--muted); font-size: 8pt; text-align: center; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Home NIDS</h1>
+    <div class="sub">ระบบตรวจจับการบุกรุกเครือข่ายบ้าน ด้วย Machine Learning (Anomaly-based) · คู่มือฉบับย่อ</div>
+  </div>
+  <div class="sub" style="text-align:right;white-space:nowrap">Python · Scapy · ZeroMQ · Isolation Forest<br>โฟลเดอร์: <code>C:\Project_AI\home-nids</code></div>
+</div>
+
+<div class="legend">
+  <span class="tag t-blue">■ ภาพรวม / การทำงาน</span>
+  <span class="tag t-purple">■ โครงสร้างไฟล์</span>
+  <span class="tag t-green">■ วิธีใช้งาน</span>
+  <span class="tag t-red">■ ข้อควรระวัง</span>
+  <span class="tag t-orange">■ การเทรนโมเดล</span>
+</div>
+
+<!-- ============================ 1. เป้าหมาย + การทำงาน ============================ -->
+<section class="blue">
+  <h2><span class="num">1</span> เป้าหมาย และ ระบบทำงานอย่างไร</h2>
+  <div class="box blue-bg">
+    <b>เป้าหมาย:</b> รันระบบค้างไว้บนเครื่องที่รับ traffic จาก switch (SPAN) แล้วเมื่อมีสิ่งผิดปกติ เช่น <code>ping</code> หรือ <code>nmap</code>
+    ต้องขึ้น <b style="color:var(--red)">ALERT สีแดง</b> ภายในไม่กี่วินาที และบันทึกลงฐานข้อมูล
+    โดยเขียนเองทั้งหมด ไม่ใช้ IDS สำเร็จรูป (Snort, Suricata, Zeek)
+  </div>
+  <p><b>หลักคิด (Anomaly-based):</b> โมเดลเรียนรู้แค่ว่า traffic <u>ปกติ</u> หน้าตาเป็นอย่างไร อะไรที่ต่างจากนั้นมากจะถูกมองว่า "แปลก"
+  ไม่ต้องมีตัวอย่างการโจมตีตอนเทรน</p>
+
+  <div class="flow">
+    <div class="node"><b>capture</b>ดัก packet<br>(Wi-Fi / LAN / loopback)</div>
+    <div class="arrow"><span>➜</span><span>packets</span></div>
+    <div class="node"><b>feature</b>แปลงเป็นตัวเลข<br>23 ค่า / packet</div>
+    <div class="arrow"><span>➜</span><span>features</span></div>
+    <div class="node"><b>detection</b>โมเดลให้คะแนน<br>score ≥ threshold = แปลก</div>
+    <div class="arrow"><span>➜</span><span>detections</span></div>
+    <div class="stack">
+      <div class="node out"><b>alert</b>ALERT สีแดง + SQLite</div>
+      <div class="node"><b>monitor</b>packet ไหลสด (ปกติเทา / แปลกแดง)</div>
+    </div>
+  </div>
+  <p style="font-size:9pt;color:var(--muted)">แต่ละกล่อง = โปรแกรมแยกกัน (microservice) คุยกันผ่าน ZeroMQ ด้วย JSON · ตั้งค่าทั้งหมดในไฟล์เดียว <code>config/config.yaml</code></p>
+
+  <h3>โมเดลดูอะไรใน packet (feature)</h3>
+  <table>
+    <tr><th style="width:28%">ต่อ packet</th><td>protocol (TCP/UDP/ICMP), ขนาด, TTL, TCP flags (SYN/ACK/FIN/…), ICMP type, กลุ่มของ port ปลายทาง</td></tr>
+    <tr><th>บริบท 5 วินาทีล่าสุด<br>ของเครื่องต้นทาง</th><td>ส่งกี่ packet · ไปกี่ port · ไปกี่เครื่อง · ไปกี่ port ของ service (&lt; 49152) · สัดส่วนเครื่องปลายทางต่อ packet<br>
+      <span style="color:var(--muted)">→ ทำให้จับการสแกน (nmap) ได้ เพราะตัวสแกนยิงหลาย port/หลายเครื่องในเวลาสั้น</span></td></tr>
+  </table>
+</section>
+
+<!-- ============================ 2. โครงสร้างไฟล์ ============================ -->
+<section class="purple">
+  <h2><span class="num">2</span> โฟลเดอร์และไฟล์</h2>
+  <table>
+    <tr><th style="width:27%">ที่อยู่</th><th>ความหมาย</th></tr>
+    <tr><td colspan="2" style="background:var(--green-bg);color:var(--green);font-weight:700">🟢 ส่วนที่คุณใช้ (อยู่ชั้นนอก)</td></tr>
+    <tr><td><code>config/config.yaml</code></td><td><b>ไฟล์ตั้งค่าเดียวของระบบ</b>: interface ที่จะดัก, threshold, cooldown, path ของ pcap</td></tr>
+    <tr><td><code>training/</code></td><td><b><code>train.ipynb</code> = ตัวเทรนหลัก (Jupyter)</b> · <code>pcap/normal/</code> วาง pcap ปกติ · <code>pcap/test/</code> วาง pcap ที่มีการโจมตี · <code>pcap/labels.csv</code> กฎ label · (<code>train.py</code>, <code>pcap_to_csv.py</code>, <code>evaluate.py</code> = โค้ดเบื้องหลัง notebook)</td></tr>
+    <tr><td><code>data/</code></td><td>ข้อมูลเทรน (.csv), pcap ที่แปลงแล้ว (<code>pcap_csv/</code>), <b><code>alerts.db</code> = ประวัติ alert</b></td></tr>
+    <tr><td><code>run_all.py</code></td><td><b>รันทั้งระบบ</b> (<code>.ps1</code> Windows, <code>.sh</code> Linux)</td></tr>
+    <tr><td><code>README.md</code> / <code>.pdf</code></td><td>เอกสารสำหรับ AI / คู่มือนี้ · <code>requirements.txt</code> ใช้ตอนติดตั้ง · <code>pytest.ini</code> ตั้งค่าการทดสอบ</td></tr>
+    <tr><td colspan="2" style="background:var(--blue-bg);color:var(--blue);font-weight:700">🔵 <code>system/</code> — ระบบใช้เอง ไม่ต้องแก้</td></tr>
+    <tr><td><code>system/services/</code></td><td>5 โปรแกรมหลัก: capture → feature → detection → alert / monitor</td></tr>
+    <tr><td><code>system/shared/</code></td><td>โค้ดใช้ร่วมกัน · <code>features.py</code> = สูตรแปลง packet เป็นตัวเลข (ใช้ทั้งเทรนและรันจริง)</td></tr>
+    <tr><td><code>system/models/</code></td><td>โมเดลที่เทรนแล้ว (notebook บันทึกให้เอง) — <b style="color:var(--red)">ห้ามลบ</b></td></tr>
+    <tr><td><code>system/tests/</code></td><td>ชุดทดสอบ (รัน <code>python -m pytest</code> จากโฟลเดอร์หลัก)</td></tr>
+    <tr><td><code>system/scripts/</code></td><td><code>list_interfaces.py</code> ดูชื่อ network interface</td></tr>
+    <tr><td><code>system/docs/</code></td><td>ต้นฉบับ HTML ของ README.pdf</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 3. วิธีใช้งาน ============================ -->
+<section class="green page-break">
+  <h2><span class="num">3</span> วิธีใช้งาน</h2>
+  <div class="cols">
+    <div>
+      <h3>① ติดตั้ง (ครั้งแรกครั้งเดียว)</h3>
+<pre>pip install -r requirements.txt</pre>
+      <p>Windows: ลง <b>Npcap</b> และติ๊ก <i>Support loopback traffic</i> · Linux: ลง libpcap</p>
+
+      <h3>② เลือก interface ที่จะดัก</h3>
+<pre>python system/scripts/list_interfaces.py</pre>
+      <p>ใส่ชื่อใน <code>config.yaml → capture.interfaces</code> เช่น <code>"Wi-Fi"</code>, <code>"loopback"</code><br>
+      ใช้ SPAN: เสียบสาย LAN เข้าพอร์ตที่ mirror แล้วใส่ <code>"Ethernet"</code></p>
+
+      <h3>③ รันระบบ <span style="font-weight:400;color:var(--muted)">(PowerShell แบบ Administrator)</span></h3>
+<pre>cd C:\Project_AI\home-nids
+python run_all.py</pre>
+      <p>หน้าต่างนี้แสดง ALERT · หน้าต่าง monitor เปิดแยกเอง · ปิดด้วย <b>Ctrl+C</b></p>
+    </div>
+    <div>
+      <h3>④ ทดสอบ <span style="font-weight:400;color:var(--muted)">(เปิด terminal อีกอัน)</span></h3>
+<pre>ping 172.20.10.2       <span class="c"># IP เครื่อง (ดู ipconfig)</span>
+nmap -sS 172.20.10.2   <span class="c"># ใช้ IP จริง ไม่ใช่ 127.0.0.1</span></pre>
+      <p>ผลที่ควรเห็น:</p>
+<pre><span style="background:#dc2626;color:#fff"> ALERT </span> 12:34:56  172.20.10.2 → 172.20.10.2  ICMP
+   เหตุผล: ICMP echo request (ping) ไม่พบใน traffic ปกติ  score=0.717</pre>
+
+      <h3>⑤ ดูประวัติ alert</h3>
+<pre>python -c "import sqlite3; [print(r) for r in sqlite3.connect('data/alerts.db').execute('select src_ip,dst_ip,proto,count,reason from alerts')]"</pre>
+
+      <h3>⑥ ตรวจว่าโค้ดยังทำงานถูก</h3>
+<pre>python -m pytest</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 5. ข้อควรระวัง ============================ -->
+<section class="red">
+  <h2><span class="num">4</span> ข้อควรระวัง และปัญหาที่พบบ่อย</h2>
+  <div class="cols">
+    <table>
+      <tr><th style="width:40%">อาการ</th><th>แก้ไข</th></tr>
+      <tr><td>ไม่พบไฟล์โมเดล</td><td>รัน <code>generate_data.py</code> แล้ว <code>train.py</code></td></tr>
+      <tr><td>ไม่พบ interface</td><td>ดูชื่อจาก <code>system/scripts/list_interfaces.py</code></td></tr>
+      <tr><td>ping ตัวเองไม่ขึ้น</td><td>ต้องมี <code>"loopback"</code> ใน config + Npcap loopback</td></tr>
+      <tr><td>ดัก packet ไม่ได้</td><td>เปิด terminal แบบ Administrator / ใช้ sudo</td></tr>
+      <tr><td>feature ไม่ตรงกับโมเดล</td><td>แก้ <code>features.py</code> แล้วต้องเทรนใหม่</td></tr>
+    </table>
+    <ul>
+      <li>รองรับเฉพาะ <b>IPv4</b></li>
+      <li>การสแกนที่<b>ช้ามาก</b> (nmap <code>-T0/-T1</code>) หลุดได้ เพราะดูทีละ 5 วินาที</li>
+      <li>ยังไม่ได้ทดสอบกับ nmap ตัวจริง, ping จากเครื่องอื่น และ SPAN จริง</li>
+      <li>เครื่องนี้ <b>ห้ามใช้ pandas</b> (Windows บล็อก) โปรเจกต์จึงใช้ numpy + csv แทน</li>
+      <li>TCP ระหว่าง 127.0.0.1 ↔ 127.0.0.1 ถูกข้ามโดยตั้งใจ (เป็น traffic ภายในของระบบเอง)</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ 5. การเทรนโมเดล ============================ -->
+<section class="orange page-break">
+  <h2><span class="num">5</span> การเทรนโมเดลด้วย Jupyter (ใช้ dataset จากออนไลน์ / Wireshark)</h2>
+  <div class="box orange-bg">
+    <b>หลักสำคัญ:</b> เทรนด้วย <b>traffic ปกติล้วน</b> (ไม่ต้องมี label) — ส่วนข้อมูลที่ <b>มีการโจมตี + label</b> ใช้แค่ <b>วัดผล</b> (TP/FP/TN/FN)
+    ถ้ามีการโจมตีปนในข้อมูลเทรน โมเดลจะเรียนว่าการโจมตีนั้นปกติ
+  </div>
+
+  <h3>ขั้นตอน (ทำครั้งเดียวจบใน notebook)</h3>
+  <div class="steps">
+    <div class="step"><b>① โหลด dataset</b>เลือกชุดที่มี <code>.pcap</code> เช่น CIC-IDS2017</div>
+    <div class="step"><b>② วางไฟล์</b>ปกติ → <code>training/pcap/normal/</code><br>มีการโจมตี → <code>training/pcap/test/</code></div>
+    <div class="step"><b>③ เขียน label</b>ใส่ IP ผู้โจมตี + ช่วงเวลาใน <code>training/pcap/labels.csv</code></div>
+    <div class="step"><b>④ เปิด notebook</b><code>python -m notebook training/train.ipynb</code><br>แล้วกด <b>Run All</b></div>
+    <div class="step"><b>⑤ อ่านผล</b>Confusion Matrix + Accuracy, Precision, Recall, F1</div>
+    <div class="step"><b>⑥ ใช้งาน</b>โมเดลถูกบันทึกลง <code>system/models/</code> แล้ว → รัน <code>run_all.py</code> ใหม่</div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3>สิ่งที่ notebook ทำให้อัตโนมัติ</h3>
+      <table>
+        <tr><th style="width:12%">ขั้น</th><th>ทำอะไร</th></tr>
+        <tr><td>0</td><td>อ่าน parameter จาก <code>config.yaml</code> + ใช้โค้ดของ microservice (สูตร feature ตัวเดียวกับระบบจริง)</td></tr>
+        <tr><td>1</td><td>แปลง pcap → CSV (เก็บไว้ที่ <code>data/pcap_csv/</code> ครั้งต่อไปไม่ต้องแปลงซ้ำ)</td></tr>
+        <tr><td>2–4</td><td>รวมข้อมูลปกติ ตัด ping ออก ดูกราฟ แล้วเทรน</td></tr>
+        <tr><td>5</td><td>สร้างชุดทดสอบ: ไฟล์ใน <code>test/</code> + การโจมตีจำลอง (ping, nmap)</td></tr>
+        <tr><td>6–7</td><td>เลือก threshold แล้ววัดผล พร้อมกราฟ Confusion Matrix / ROC</td></tr>
+        <tr><td>8</td><td>บันทึกโมเดล + threshold ลง <code>system/models/</code></td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>ตัวอย่าง: CIC-IDS2017</h3>
+      <table>
+        <tr><th style="width:42%">ไฟล์</th><th>วางที่</th></tr>
+        <tr><td><code>Monday-WorkingHours.pcap</code></td><td><code>normal/</code> (วันปกติ)</td></tr>
+        <tr><td><code>Friday-WorkingHours.pcap</code></td><td><code>test/</code> (มี PortScan)</td></tr>
+      </table>
+      <p style="margin-top:4px"><code>labels.csv</code> (เอา <code>#</code> หน้าบรรทัดตัวอย่างออก):</p>
+<pre>PortScan,172.16.0.1,192.168.10.50,2017-07-07T13:55:00-03:00,2017-07-07T14:35:00-03:00,0,CIC Friday</pre>
+      <p style="font-size:8.8pt;color:var(--muted)">ตรวจ IP/เวลากับหน้าเว็บ dataset อีกครั้ง · ไฟล์ใหญ่มาก อ่านแค่ <code>max_packets_per_pcap</code> (2 ล้าน) ต่อไฟล์</p>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <h3>อ่านผลการวัด</h3>
+      <table>
+        <tr><th style="width:30%">ค่า</th><th>ความหมาย</th></tr>
+        <tr><td><b>TP</b> / <b>FN</b></td><td>การโจมตีที่ จับได้ / หลุด</td></tr>
+        <tr><td><b>FP</b> / <b>TN</b></td><td>ปกติแต่ <b style="color:var(--red)">alert หลอก</b> / ปกติและตอบถูก</td></tr>
+        <tr><td>Accuracy</td><td>ตอบถูกกี่ % (⚠️ หลอกตาเมื่อข้อมูลปกติเยอะมาก)</td></tr>
+        <tr><td>Precision</td><td>alert ที่ขึ้น เป็นการโจมตีจริงกี่ %</td></tr>
+        <tr><td>Recall</td><td>การโจมตีทั้งหมด จับได้กี่ %</td></tr>
+        <tr><td>F1</td><td>ค่าเฉลี่ยของ Precision กับ Recall</td></tr>
+        <tr><td>FPR</td><td>traffic ปกติ ถูก alert หลอกกี่ %</td></tr>
+        <tr><td>ROC-AUC</td><td>แยกปกติ/โจมตีได้ดีแค่ไหน (1.0 = สมบูรณ์)</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>ผลปัจจุบัน (ข้อมูลจำลอง, threshold 0.6308)</h3>
+      <table>
+        <tr><th>Accuracy</th><th>Precision</th><th>Recall</th><th>F1</th><th>FPR</th><th>AUC</th></tr>
+        <tr><td>0.966</td><td>0.986</td><td>0.909</td><td>0.946</td><td>0.006</td><td>0.991</td></tr>
+      </table>
+      <h3>ตั้งค่าในเซลล์แรกของ notebook</h3>
+      <table>
+        <tr><th style="width:42%">ค่า</th><th>ใช้ทำอะไร</th></tr>
+        <tr><td><code>USE_SYNTHETIC</code></td><td>รวมข้อมูลจำลองไปด้วย (แนะนำ True)</td></tr>
+        <tr><td><code>DROP_ICMP_ECHO</code></td><td>ตัด ping ออกจากข้อมูลเทรน</td></tr>
+        <tr><td><code>USE_SIM_TEST</code></td><td>เพิ่ม ping/nmap จำลองในการวัดผล</td></tr>
+        <tr><td><code>THRESHOLD_MODE</code></td><td><code>"recommended"</code> (แนะนำ) · <code>"best_f1"</code> (ตัวเลขสวยเกินจริง) · หรือตัวเลข</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="box green-bg"><b>แหล่งข้อมูลอื่นที่ใช้ได้:</b> ไฟล์ที่ <b>Save จาก Wireshark</b> (วางใน <code>normal/</code> ได้เลย) ·
+  บันทึกจากบ้านด้วย <code>capture.mode: csv</code> · ใช้ไม่ได้: CSV แบบ flow (Kaggle, NSL-KDD) เพราะระบบเราทำงานระดับ packet
+  · เทรนแบบ command line: <code>python training/train.py</code></div>
+</section>
+
+<div class="footer">Home NIDS · Demo เวอร์ชันแรก · รายละเอียดเชิงเทคนิค (ภาษาอังกฤษ) ดูที่ README.md</div>
+</body>
+</html>

@@ -1,0 +1,74 @@
+# ============================================================
+# config กลางของ Home NIDS — ทุก service อ่านไฟล์นี้ ไม่ hardcode
+# path ที่เป็น relative จะอิงจากโฟลเดอร์รากของโปรเจกต์
+# ============================================================
+
+# ---------- ZeroMQ PUB/SUB ----------
+# แต่ละ topic มี publisher ของตัวเอง (bind ที่ port นี้) subscriber จะ connect มา
+bus:
+  host: "127.0.0.1"
+  ports:
+    packets: 5555      # capture-service  -> feature-service
+    features: 5556     # feature-service  -> detection-service
+    detections: 5557   # detection-service -> alert-service, monitor-service
+
+# ---------- capture-service ----------
+capture:
+  # รายชื่อ interface ที่จะดักพร้อมกัน (หลายตัวได้)
+  #   - ใส่ชื่อ interface ตรงๆ เช่น "Wi-Fi", "Ethernet", "eth0"
+  #   - "loopback" = loopback ของระบบ (Linux: lo, Windows: Npcap Loopback Adapter)
+  #   - "default"  = interface หลักที่ Scapy เลือกให้
+  # ดูรายชื่อที่ใช้ได้: python system/scripts/list_interfaces.py
+  # ถ้าเสียบสายเข้าพอร์ต SPAN ให้ใส่ชื่อ interface ของ NIC ที่รับ SPAN (เช่น "Ethernet")
+  interfaces:
+    - "Wi-Fi"
+    - "loopback"
+  # โหมด: zmq = ส่งเข้าระบบ | csv = บันทึกลงไฟล์ไว้เทรนข้อมูลจริง | both = ทำทั้งคู่
+  mode: zmq
+  csv_path: "data/captured_packets.csv"
+  # ข้าม TCP ที่ทั้งสองฝั่งเป็น 127.0.0.1 (เป็น traffic ภายในของ ZeroMQ บน Windows ถ้าดักจะเกิด feedback loop)
+  # ICMP/UDP บน loopback และ TCP ที่ใช้ IP จริงของเครื่องยังดักตามปกติ
+  ignore_loopback_tcp: true
+  # BPF filter เพิ่มเติม (ว่าง = ไม่เพิ่ม) ระบบจะกรอง IPv4 และ port ของ ZMQ ออกให้เอง
+  extra_bpf: ""
+  stats_interval_sec: 30
+
+# ---------- feature-service ----------
+feature:
+  window_sec: 5        # sliding window ของ feature บริบทต่อ src IP
+
+# ---------- detection-service ----------
+detection:
+  model_path: "system/models/iforest.joblib"
+  scaler_path: "system/models/scaler.joblib"
+  meta_path: "system/models/meta.json"
+  # threshold ของ anomaly score (ยิ่งสูงยิ่งแปลก)
+  #   "auto" = ใช้ค่าแนะนำที่ train.py คำนวณไว้ใน system/models/meta.json
+  #   หรือใส่ตัวเลข เช่น 0.62 เพื่อกำหนดเอง
+  threshold: auto
+  batch_size: 256
+
+# ---------- alert-service ----------
+alert:
+  cooldown_sec: 10                 # รวม alert ซ้ำจาก src IP เดียวกันภายในกี่วินาที
+  db_path: "data/alerts.db"
+
+# ---------- monitor-service ----------
+monitor:
+  show_normal: true                # false = แสดงเฉพาะ packet แปลก
+  max_normal_lines_per_sec: 40     # จำกัดจำนวนบรรทัด packet ปกติต่อวินาที (แปลกแสดงเสมอ)
+
+# ---------- training ----------
+training:
+  seed: 42
+  n_packets: 8000
+  packets_csv: "data/normal_packets.csv"       # metadata ดิบ (ใช้ชนิดเดียวกับที่ capture บันทึก)
+  features_csv: "data/normal_features.csv"     # feature ที่คำนวณแล้ว (ไว้ดู/วิเคราะห์)
+  fp_quantile: 0.998               # threshold แนะนำต้องสูงกว่า score ปกติกี่ %
+  n_estimators: 200
+  # ---- เทรนจาก dataset ออนไลน์ / ไฟล์ Wireshark (ใช้ใน training/train.ipynb) ----
+  pcap_normal_dir: "training/pcap/normal"     # วาง .pcap/.pcapng ที่เป็น traffic ปกติล้วน (ใช้เทรน)
+  pcap_test_dir: "training/pcap/test"         # วาง .pcap/.pcapng ที่มีการโจมตีปน (ใช้วัดผล)
+  labels_file: "training/pcap/labels.csv"     # กฎติด label ให้ไฟล์ใน test (IP ผู้โจมตี + ช่วงเวลา)
+  pcap_csv_dir: "data/pcap_csv"               # ที่เก็บ CSV ที่แปลงจาก pcap แล้ว (cache)
+  max_packets_per_pcap: 2000000               # อ่านไม่เกินกี่ packet ต่อไฟล์ (dataset ใหญ่มาก)

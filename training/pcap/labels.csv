@@ -1,0 +1,15 @@
+# กฎติด label ให้ packet ในไฟล์ training/pcap/test/ (ใช้คำนวณ TP/FP/TN/FN ใน train.ipynb)
+# 1 บรรทัด = 1 การโจมตี | packet ที่ตรงกฎข้อใดข้อหนึ่ง = "โจมตี" (label ตามคอลัมน์ label) ที่เหลือ = "normal"
+#
+# คอลัมน์:
+#   label            ชื่อการโจมตี เช่น PortScan, DDoS
+#   src_ip           IP ผู้โจมตี (ว่าง = IP ไหนก็ได้)
+#   dst_ip           IP เหยื่อ (ว่าง = IP ไหนก็ได้)
+#   start, end       ช่วงเวลา ISO 8601 พร้อม timezone เช่น 2017-07-07T13:55:00-03:00 หรือ epoch วินาที (ว่าง = ไม่จำกัด)
+#   both_directions  1 = นับ packet ขาตอบกลับ (เหยื่อ -> ผู้โจมตี) เป็นการโจมตีด้วย | 0 = นับเฉพาะผู้โจมตี -> เหยื่อ
+#   note             หมายเหตุ
+#
+# ตัวอย่าง (CIC-IDS2017 วันศุกร์ Friday-WorkingHours.pcap — ตรวจ IP/เวลากับหน้าเว็บ dataset อีกครั้งก่อนใช้จริง):
+#   PortScan,172.16.0.1,192.168.10.50,2017-07-07T13:55:00-03:00,2017-07-07T14:35:00-03:00,0,CIC-IDS2017 Friday PortScan
+# เอา # ข้างหน้าออกเพื่อเปิดใช้
+label,src_ip,dst_ip,start,end,both_directions,note
