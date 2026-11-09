@@ -50,6 +50,19 @@ def resolve_threshold(dcfg: dict, meta: dict) -> float:
     return float(th)
 
 
+def is_icmp_echo(meta: dict) -> bool:
+    """ping = ICMP echo request (type 8) หรือ echo reply (type 0)"""
+    return meta.get("proto") == "ICMP" and meta.get("icmp_type") in (0, 8)
+
+
+def decide(score: float, threshold: float, meta: dict, ping_only: bool) -> bool:
+    """ตัดสินว่าแปลกไหม: score >= threshold
+    ping_only=True (โหมดทดสอบ ping) -> นับเฉพาะ ping ส่วน traffic อื่นที่ score สูงถือว่าปกติ (ตัด alert หลอกทิ้ง)"""
+    if ping_only and not is_icmp_echo(meta):
+        return False
+    return bool(score >= threshold)
+
+
 def main() -> None:
     log = setup_logging(SERVICE)
     cfg = load_config()
@@ -68,6 +81,9 @@ def main() -> None:
     log.info("subscribe '%s' จาก %s", TOPIC_FEATURES, sub.endpoint)
     log.info("publish '%s' ที่ %s", TOPIC_DETECTIONS, pub.endpoint)
 
+    ping_only = bool(dcfg.get("ping_only", False))
+    if ping_only:
+        log.info("โหมด ping_only: แจ้งเตือนเฉพาะ ping (ICMP echo) — traffic อื่นจะไม่ถูกมองว่าแปลก")
     batch = int(dcfg.get("batch_size", 256))
     total = anomalies = 0
     last_log, last_total = time.time(), 0
@@ -79,7 +95,7 @@ def main() -> None:
                 # score = -score_samples: ยิ่งสูงยิ่งแปลก (ช่วงประมาณ 0.3 - 0.8)
                 scores = -model.score_samples(scaler.transform(X))
                 for m, s in zip(msgs, scores):
-                    is_anom = bool(s >= threshold)
+                    is_anom = decide(float(s), threshold, m["meta"], ping_only)
                     anomalies += is_anom
                     pub.send(DetectionMsg(meta=m["meta"], vector=m["vector"], score=round(float(s), 5),
                                           is_anomaly=is_anom, threshold=threshold).to_dict())

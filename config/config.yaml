@@ -47,6 +47,9 @@ detection:
   #   หรือใส่ตัวเลข เช่น 0.62 เพื่อกำหนดเอง
   threshold: auto
   batch_size: 256
+  # โหมดทดสอบ ping: true = แจ้งเตือนเฉพาะ ping (ICMP echo) ตัด alert หลอกจาก traffic อื่นทิ้ง
+  #                 false = ใช้โมเดลตัดสินทุกอย่าง (ต้องปิดตอนทดสอบ nmap / ใช้งานจริง)
+  ping_only: true
 
 # ---------- alert-service ----------
 alert:

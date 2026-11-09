@@ -82,3 +82,17 @@ def test_bus_roundtrip():
         sub.close()
         pub.close()
     assert got and got[0] == {"hello": "สวัสดี"}
+
+
+def test_ping_only_mode_flags_only_icmp_echo():
+    from services.detection_service.main import decide
+    ping = {"proto": "ICMP", "icmp_type": 8}
+    reply = {"proto": "ICMP", "icmp_type": 0}
+    unreach = {"proto": "ICMP", "icmp_type": 3}     # destination unreachable (alert หลอกที่เจอจริง)
+    quic = {"proto": "UDP", "icmp_type": None}
+    # ping_only: เฉพาะ ping ที่ score เกิน threshold เท่านั้น
+    assert decide(0.72, 0.63, ping, True) and decide(0.72, 0.63, reply, True)
+    assert not decide(0.71, 0.63, unreach, True) and not decide(0.64, 0.63, quic, True)
+    assert not decide(0.50, 0.63, ping, True)
+    # ปิด ping_only: ใช้ score อย่างเดียว
+    assert decide(0.71, 0.63, unreach, False) and decide(0.64, 0.63, quic, False)
