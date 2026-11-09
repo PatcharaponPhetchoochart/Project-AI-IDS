@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>Home NIDS — First Step</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  :root { --ink:#1f2430; --muted:#5b6372; --line:#dfe3ea;
+          --blue:#2563eb; --green:#059669; --green-bg:#e6f7f1; --orange:#ea580c; --red:#dc2626; }
+  * { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body { font-family:"Leelawadee UI","Tahoma",sans-serif; color:var(--ink); font-size:10.5pt; line-height:1.45; margin:0; background:#fff; }
+  code, pre { font-family:"Consolas","Cascadia Mono",monospace; }
+  code { background:#f1f3f7; padding:0 3px; border-radius:3px; font-size:9.4pt; white-space:nowrap; }
+  pre { background:#1e2533; color:#e8ecf3; padding:6px 10px; border-radius:6px; margin:4px 0 0; font-size:9.4pt; white-space:pre-wrap; }
+  .header { border-bottom:3px solid var(--ink); padding-bottom:6px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:flex-end; gap:16px; }
+  h1 { margin:0; font-size:20pt; }
+  .sub { color:var(--muted); font-size:9.5pt; }
+  .step { display:flex; gap:10px; margin:0 0 8px; break-inside:avoid; }
+  .n { flex:0 0 28px; height:28px; border-radius:50%; color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:11pt; }
+  .body { flex:1; min-width:0; }
+  .t { font-weight:700; font-size:11pt; }
+  .tag { font-size:8.5pt; font-weight:600; padding:0 6px; border-radius:8px; margin-left:4px; }
+  .once { background:#eaf1ff; color:var(--blue); }
+  .admin { background:#fdecec; color:var(--red); }
+  .note { color:var(--muted); font-size:9.3pt; }
+  .b-blue { background:var(--blue); } .b-orange { background:var(--orange); } .b-green { background:var(--green); } .b-red { background:var(--red); }
+  .ok { background:var(--green-bg); border-left:4px solid var(--green); border-radius:6px; padding:7px 10px; margin-top:4px; }
+  .alert { background:#dc2626; color:#fff; padding:0 4px; }
+  .legend { font-size:8.8pt; color:var(--muted); margin:-4px 0 10px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div><h1>Home NIDS — First Step</h1>
+  <div class="sub">ติดตั้ง → เทรน → รัน → ทดสอบ ping ตัวเอง (Windows)</div></div>
+  <div class="sub" style="text-align:right">github.com/PatcharaponPhetchoochart/Project-AI-IDS</div>
+</div>
+<div class="legend">
+  <span style="color:var(--blue)">●</span> เตรียมเครื่อง &nbsp;
+  <span style="color:var(--orange)">●</span> เทรนโมเดล &nbsp;
+  <span style="color:var(--green)">●</span> รันและทดสอบ &nbsp;
+  <span class="tag once">ครั้งแรกครั้งเดียว</span> <span class="tag admin">Administrator</span>
+</div>
+
+<div class="step"><div class="n b-blue">0</div><div class="body">
+  <div class="t">ติดตั้งโปรแกรม <span class="tag once">ครั้งแรกครั้งเดียว</span></div>
+  Python 3.10+ (ติ๊ก <i>Add to PATH</i>) · Git · <b>Npcap</b> (ติ๊ก <b>Support loopback traffic</b>)
+</div></div>
+
+<div class="step"><div class="n b-blue">1</div><div class="body">
+  <div class="t">Clone โปรเจกต์ <span class="tag once">ครั้งแรกครั้งเดียว</span></div>
+<pre>cd C:\Project_AI
+git clone https://github.com/PatcharaponPhetchoochart/Project-AI-IDS.git
+cd Project-AI-IDS</pre>
+</div></div>
+
+<div class="step"><div class="n b-blue">2</div><div class="body">
+  <div class="t">ติดตั้ง library <span class="tag once">ครั้งแรกครั้งเดียว</span></div>
+<pre>python -m pip install -r requirements.txt</pre>
+</div></div>
+
+<div class="step"><div class="n b-blue">3</div><div class="body">
+  <div class="t">เช็กชื่อ network interface</div>
+<pre>python system\scripts\list_interfaces.py</pre>
+  <div class="note">ต้องเห็น <code>\Device\NPF_Loopback</code> · ถ้าใช้สาย LAN ให้แก้ <code>config\config.yaml</code> → <code>capture.interfaces</code> จาก <code>"Wi-Fi"</code> เป็น <code>"Ethernet"</code></div>
+</div></div>
+
+<div class="step"><div class="n b-orange">4</div><div class="body">
+  <div class="t">เทรนโมเดล <span class="tag once">ครั้งแรกครั้งเดียว</span></div>
+<pre>python -m notebook training\train.ipynb</pre>
+  <div class="note">กด <b>Run All</b> → รอจนเซลล์สุดท้ายขึ้น <code>model_path -&gt; ...\system\models\iforest.joblib</code> (~10 วินาที) → ปิดได้</div>
+</div></div>
+
+<div class="step"><div class="n b-green">5</div><div class="body">
+  <div class="t">รันระบบ <span class="tag admin">PowerShell แบบ Administrator</span></div>
+<pre>cd C:\Project_AI\Project-AI-IDS
+python run_all.py</pre>
+  <div class="note">รอ ~15 วินาที จนเห็น <code>alert-service พร้อมทำงาน</code> · หน้าต่าง monitor จะเด้งขึ้นมาเอง</div>
+</div></div>
+
+<div class="step"><div class="n b-green">6</div><div class="body">
+  <div class="t">ping ตัวเอง <span class="note" style="font-weight:400">(เปิด PowerShell อีกหน้าต่าง)</span></div>
+<pre>ipconfig                  &lt;- ดู IPv4 Address ของ Wi-Fi
+ping 172.20.10.2          &lt;- ใส่ IP ของเครื่องตัวเอง</pre>
+</div></div>
+
+<div class="step"><div class="n b-green">7</div><div class="body">
+  <div class="t">✅ ผ่าน ถ้าขึ้น ALERT ภายใน 1–3 วินาที</div>
+  <div class="ok">
+<pre style="margin:0"><span class="alert"> ALERT </span> 15:26:59  172.20.10.2 → 172.20.10.2  ICMP  iface=loopback
+        เหตุผล: ICMP echo request (ping) ไม่พบใน traffic ปกติ</pre>
+  <div style="margin-top:4px">และหน้าต่าง monitor มีบรรทัด ICMP <b style="color:var(--red)">สีแดง</b></div>
+  </div>
+</div></div>
+
+<div class="step"><div class="n b-green">8</div><div class="body">
+  <div class="t">ปิดระบบ</div>
+  กด <b>Ctrl+C</b> ในหน้าต่าง <code>run_all.py</code>
+</div></div>
+
+<p class="note" style="margin-top:10px;border-top:1px solid var(--line);padding-top:6px">
+ใช้ครั้งต่อไป: ทำแค่ขั้น 5–8 · ไม่ขึ้น ALERT: เช็กว่าทำขั้น 4 แล้ว และ Npcap ติ๊ก loopback · รายละเอียดเพิ่มเติม: README.pdf</p>
+</body>
+</html>
