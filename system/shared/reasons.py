@@ -26,6 +26,13 @@ def explain(meta: dict, vector: list | None = None) -> str:
         name = _ICMP_NAMES.get(t, f"type {t}")
         return f"Unusual ICMP {name} - not seen in normal traffic"
 
+    unans = feats.get("ctx_unans_ports", 0)
+    unans_long = feats.get("ctx_unans_ports_long", 0)
+    if unans >= 10:
+        return f"Port scan: {int(unans)} ports probed without reply within 5s"
+    if unans_long >= 20:
+        return f"Slow port scan: {int(unans_long)} ports probed without reply within 60s"
+
     ports = feats.get("ctx_low_ports", 0)
     ips = feats.get("ctx_dst_ips", 0)
     if ports >= 15:

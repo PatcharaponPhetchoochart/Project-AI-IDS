@@ -13,3 +13,6 @@
 #   PortScan,172.16.0.1,192.168.10.50,2017-07-07T13:55:00-03:00,2017-07-07T14:35:00-03:00,0,CIC-IDS2017 Friday PortScan
 # เอา # ข้างหน้าออกเพื่อเปิดใช้
 label,src_ip,dst_ip,start,end,both_directions,note
+PortScan,172.16.0.1,192.168.10.50,2017-07-07T13:55:00-03:00,2017-07-07T15:29:00-03:00,1,CIC-IDS2017 Friday PortScan (firewall on 13:55-14:35 + off 14:51-15:29)
+Ping-iPhone,192.168.1.34,192.168.1.36,2026-11-12T21:35:50+07:00,2026-11-12T21:36:25+07:00,0,home session2: ping from iPhone (Fing)
+PortScan-Fing,192.168.1.34,192.168.1.36,2026-11-12T21:36:25+07:00,2026-11-12T21:36:50+07:00,0,home session2: Fing Find open ports (TCP SYN 320 ports)
