@@ -132,13 +132,29 @@ def score_scenarios(model, scaler, window_sec: float = 5.0) -> dict[str, np.ndar
             for name, pkts in make_scenarios().items()}
 
 
-def recommend_threshold(normal_scores: np.ndarray, ping_scores: np.ndarray, quantile: float = 0.998) -> tuple[float, str]:
+def ping_request_scores(model, scaler, window_sec: float = 5.0) -> np.ndarray:
+    """score ของ ICMP echo request (ping ขาเข้า) ใน scenario ping จำลอง
+    feature คำนวณจากทั้งลำดับ (รวม echo reply) แต่เลือกเฉพาะ request: reply เป็นแค่สิ่งที่เครื่องเราตอบกลับ
+    ตัวที่ต้องแจ้งเตือนคือ request ที่อีกฝั่งยิงเข้ามา (alert-service แจ้ง "ICMP echo request (ping)")"""
+    out = []
+    for name, pkts in make_scenarios().items():
+        if is_ping_scenario(name):
+            s = anomaly_scores(model, scaler, build_features(pkts, window_sec))
+            out.append(s[np.array([p.get("icmp_type") == 8 for p in pkts])])
+    return np.concatenate(out)
+
+
+def recommend_threshold(normal_scores: np.ndarray, ping_scores: np.ndarray, quantile: float = 0.998,
+                        gap_frac: float = 0.25) -> tuple[float, str]:
     """เลือก threshold: ต้องสูงกว่า score ปกติ (quantile ที่กำหนด) แต่ต่ำกว่า ping ที่ต่ำที่สุด
-    ถ้าแยกกันได้ ใช้ค่ากึ่งกลางช่องว่าง ถ้าแยกไม่ได้ ใช้ quantile ของ traffic ปกติและเตือน"""
+    ถ้าแยกกันได้ วางไว้ที่ gap_frac ของช่องว่างนับจากฝั่งปกติ (0.5 = กึ่งกลาง) — ค่าเริ่มต้น 0.25
+    เพราะ ping มีระยะห่างเหลือเฟือ แต่การสแกนบางแบบ (เช่นไล่ host) ได้ score ต่ำกว่า ping จึงต้องเผื่อให้
+    ถ้าแยกไม่ได้ ใช้ quantile ของ traffic ปกติและเตือน"""
     p_norm = float(np.quantile(normal_scores, quantile))
     ping_min = float(np.min(ping_scores))
     if ping_min > p_norm:
-        return (p_norm + ping_min) / 2, "OK: แยก ping ออกจาก traffic ปกติได้ (ใช้ค่ากึ่งกลางช่องว่าง)"
+        return p_norm + gap_frac * (ping_min - p_norm), \
+            f"OK: แยก ping ออกจาก traffic ปกติได้ (วางที่ {gap_frac:.0%} ของช่องว่างจากฝั่งปกติ)"
     return p_norm, ("คำเตือน: ping บางตัวมี score ต่ำกว่า quantile ของ traffic ปกติ — "
                     "ใช้ค่า quantile ของ traffic ปกติ (ping อาจหลุดบางตัว) ลองเพิ่มข้อมูล/ปรับ fp_quantile")
 
@@ -187,7 +203,7 @@ def run_training(cfg: dict | None = None, packets_csv=None, verbose: bool = True
     s_hold = anomaly_scores(model, scaler, build_features(holdout, window))
     hold_icmp = np.array([p["proto"] == "ICMP" for p in holdout])
     scen = score_scenarios(model, scaler, window)
-    ping_all = np.concatenate([v for k, v in scen.items() if is_ping_scenario(k)])
+    ping_all = ping_request_scores(model, scaler, window)          # เฉพาะ echo request (ping ขาเข้า)
     # ICMP error ที่ฝังไว้ในข้อมูลปกติมีหน้าที่แค่ให้โมเดลรู้จักมิติ ICMP -- IF แยกมันจาก echo ไม่ได้
     # จึงไม่นับเป็น "traffic ปกติ" ตอนเลือก threshold (รายงาน false positive แยกให้)
     thr, note = recommend_threshold(s_hold[~hold_icmp], ping_all, tcfg["fp_quantile"])

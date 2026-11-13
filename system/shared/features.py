@@ -14,6 +14,12 @@ feature บริบท (sliding window ต่อ src IP, ค่าเริ่�
   - ctx_low_ports = จำนวน dst port ไม่ซ้ำ "เฉพาะ port ที่ต่ำกว่า 49152" (port ของ service จริง)
     เพราะ server/gateway ที่ตอบกลับหลาย client จะมี dst port สูงๆ (ephemeral) เยอะตามปกติ ไม่ใช่การสแกน
     แต่ตัวสแกน (nmap) จะไล่ยิง port ของ service ต่ำๆ จำนวนมาก
+feature การยิงที่ไม่ได้รับการตอบรับ (v3, ต้องเห็น packet ทั้งสองทิศทาง):
+  - ctx_unans_ports / ctx_unans_ports_long = จำนวน dst port ไม่ซ้ำที่ src นี้ "เปิดการเชื่อมต่อใหม่" ไป
+    (TCP SYN ไม่มี ACK หรือ UDP ที่ไม่ใช่การตอบกลับ) แล้วยังไม่ได้รับการตอบรับ ใน window สั้น / ยาว
+    ตอบรับ = มี packet ย้อนกลับจาก port นั้น (UDP หรือ TCP ที่ไม่ใช่ RST); RST / ICMP unreachable / เงียบ = ไม่ตอบรับ
+    การสแกนยิงไปหลายสิบ-หลายร้อย port แล้วไม่มีใครตอบ ส่วน traffic ปกติ (เว็บ เกม Discord DNS)
+    ได้รับการตอบกลับเกือบทุกครั้ง และ server ที่ตอบหลาย client ก็ไม่นับ เพราะเป็น "การตอบกลับ" ไม่ใช่การยิงใหม่
 """
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ from collections import Counter, deque
 
 import numpy as np
 
-FEATURE_VERSION = 2
+FEATURE_VERSION = 3
 
 # คอลัมน์ metadata ดิบ (ตรงกับ PacketMsg และไฟล์ CSV ที่ capture-service บันทึก)
 PACKET_FIELDS = [
@@ -41,6 +47,7 @@ FEATURE_NAMES = [
     "icmp_type",
     "port_none", "port_wellknown", "port_registered", "port_dynamic",
     "ctx_pkts", "ctx_dst_ports", "ctx_dst_ips", "ctx_low_ports", "ctx_ip_ratio",
+    "ctx_unans_ports", "ctx_unans_ports_long",
 ]
 N_FEATURES = len(FEATURE_NAMES)
 
@@ -156,22 +163,79 @@ class ContextTracker:
             del self._srcs[k]
 
 
+class ProbeTracker:
+    """นับ dst port ที่ src เปิดการเชื่อมต่อใหม่ไปแล้วยังไม่ได้รับการตอบรับ (ดู docstring ต้นไฟล์)"""
+
+    def __init__(self, windows=(5.0, 60.0), flow_ttl: float = 120.0, purge_every_sec: float = 30.0):
+        self.windows = tuple(float(w) for w in windows)
+        self.keep = max(self.windows)
+        self.flow_ttl = float(flow_ttl)
+        self.purge_every = float(purge_every_sec)
+        self._flows: dict[tuple, float] = {}               # (src, sport, dst, dport, proto) -> เวลาล่าสุด
+        self._probes: dict[str, dict[int, list]] = {}      # "src|iface" -> {dst_port: [เวลา probe ล่าสุด, ยังไม่ตอบรับ]}
+        self._last_purge: float | None = None
+
+    def update(self, meta: dict, src_key: str, now: float) -> list[float]:
+        if self._last_purge is None:
+            self._last_purge = now
+        if now - self._last_purge > self.purge_every:
+            self._purge(now)
+        proto = meta.get("proto")
+        sp, dp = _num(meta.get("src_port"), None), _num(meta.get("dst_port"), None)
+        if proto in ("TCP", "UDP") and sp is not None and dp is not None:
+            sp, dp = int(sp), int(dp)
+            a, b = meta["src_ip"], meta["dst_ip"]
+            flags = int(_num(meta.get("tcp_flags"), 0))
+            rev = self._flows.get((b, dp, a, sp, proto))
+            if rev is not None and now - rev <= self.flow_ttl:          # เป็นการตอบกลับ flow ที่อีกฝั่งเปิด
+                if proto == "UDP" or not flags & 0x04:                  # RST = ปฏิเสธ ไม่นับว่าตอบรับ
+                    pend = self._probes.get(f"{b}|{meta.get('iface')}")
+                    if pend is not None and sp in pend:
+                        pend[sp][1] = False
+            elif proto == "UDP" or (flags & 0x02 and not flags & 0x10):  # เปิดการเชื่อมต่อใหม่
+                pend = self._probes.setdefault(src_key, {})
+                if dp in pend:
+                    pend[dp][0] = now
+                else:
+                    pend[dp] = [now, True]
+            self._flows[(a, sp, b, dp, proto)] = now
+        pend = self._probes.get(src_key)
+        if not pend:
+            return [0.0] * len(self.windows)
+        return [float(sum(1 for t, waiting in pend.values() if waiting and now - t <= w)) for w in self.windows]
+
+    def _purge(self, now: float) -> None:
+        """ลบ flow / probe เก่าออก กัน memory โตไม่จำกัด"""
+        self._flows = {k: t for k, t in self._flows.items() if now - t <= self.flow_ttl}
+        for key in list(self._probes):
+            kept = {p: v for p, v in self._probes[key].items() if now - v[0] <= self.keep}
+            if kept:
+                self._probes[key] = kept
+            else:
+                del self._probes[key]
+        self._last_purge = now
+
+
 class FeatureExtractor:
     """ตัวแปลง packet metadata (dict) -> feature vector — มี state ของ window ในตัว
     ต้องป้อน packet ตามลำดับเวลา"""
 
-    def __init__(self, window_sec: float = 5.0):
+    def __init__(self, window_sec: float = 5.0, long_window_sec: float = 60.0):
         self.ctx = ContextTracker(window_sec)
+        self.probes = ProbeTracker((window_sec, long_window_sec))
 
     def extract(self, meta: dict) -> list[float]:
         # แยก context ตาม (src IP, interface): เครื่องที่ถูกดักหลาย interface (เช่น สแกนตัวเองผ่าน loopback
         # ขณะที่ traffic ปกติวิ่งบน Wi-Fi) จะได้ไม่ปนกัน
+        src_key = f"{meta['src_ip']}|{meta.get('iface')}"
+        ts = float(meta["ts"])
         pkts, ports, ips, low = self.ctx.update(
-            float(meta["ts"]), f"{meta['src_ip']}|{meta.get('iface')}", meta["dst_ip"],
+            ts, src_key, meta["dst_ip"],
             None if _num(meta.get("dst_port"), None) is None else int(meta["dst_port"]),
         )
+        unans = self.probes.update(meta, src_key, ts)
         # ctx_ip_ratio = IP ปลายทางไม่ซ้ำ / packet: ใกล้ 1 เมื่อ src ยิง 1 packet ต่อ 1 host (ไล่สแกน host)
-        return packet_features(meta) + [float(pkts), float(ports), float(ips), float(low), ips / pkts]
+        return packet_features(meta) + [float(pkts), float(ports), float(ips), float(low), ips / pkts] + unans
 
     def extract_many(self, metas) -> np.ndarray:
         rows = [self.extract(m) for m in metas]

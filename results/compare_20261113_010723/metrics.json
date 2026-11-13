@@ -1,0 +1,220 @@
+{
+  "isolation_forest": {
+    "TP": 25138,
+    "FP": 27934,
+    "TN": 727454,
+    "FN": 20085,
+    "Accuracy": 0.9400220581530856,
+    "Precision": 0.4736584262888152,
+    "Recall (TPR)": 0.5558675895009176,
+    "F1": 0.5114807467317768,
+    "FPR": 0.03697967137418121,
+    "Specificity (TNR)": 0.9630203286258188,
+    "Balanced Acc": 0.7594439590633681
+  },
+  "random_forest": {
+    "TP": 42476,
+    "FP": 23,
+    "TN": 755365,
+    "FN": 2747,
+    "Accuracy": 0.9965401424661915,
+    "Precision": 0.9994588107955481,
+    "Recall (TPR)": 0.9392565729827742,
+    "F1": 0.9684229725724448,
+    "FPR": 3.044792874655144e-05,
+    "Specificity (TNR)": 0.9999695520712535,
+    "Balanced Acc": 0.9696130625270138
+  },
+  "per_test": [
+    {
+      "ชุดทดสอบ": "CIC Friday (หลัง split)",
+      "โมเดล": "Isolation Forest",
+      "Recall": 0.5300059136605559,
+      "FPR": 0.0526619606186026,
+      "Precision": 0.44525257342712926,
+      "F1": 0.48394656414354675,
+      "FP": 27916,
+      "FN": 19869
+    },
+    {
+      "ชุดทดสอบ": "CIC Friday (หลัง split)",
+      "โมเดล": "Random Forest",
+      "Recall": 0.9724423418095801,
+      "FPR": 4.3388203690638336e-05,
+      "Precision": 0.9994408382563879,
+      "F1": 0.9857567619413006,
+      "FP": 23,
+      "FN": 1165
+    },
+    {
+      "ชุดทดสอบ": "บ้าน: home_test_session2",
+      "โมเดล": "Isolation Forest",
+      "Recall": 0.9896265560165975,
+      "FPR": 0.0,
+      "Precision": 1.0,
+      "F1": 0.9947862356621481,
+      "FP": 0,
+      "FN": 10
+    },
+    {
+      "ชุดทดสอบ": "บ้าน: home_test_session2",
+      "โมเดล": "Random Forest",
+      "Recall": 0.07053941908713693,
+      "FPR": 0.0,
+      "Precision": 1.0,
+      "F1": 0.13178294573643412,
+      "FP": 0,
+      "FN": 896
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "โมเดล": "Isolation Forest",
+      "Recall": 0.8961693548387096,
+      "FPR": 0.0045,
+      "Precision": 0.9899777282850779,
+      "F1": 0.9407407407407407,
+      "FP": 18,
+      "FN": 206
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "โมเดล": "Random Forest",
+      "Recall": 0.6542338709677419,
+      "FPR": 0.0,
+      "Precision": 1.0,
+      "F1": 0.7909811090798293,
+      "FP": 0,
+      "FN": 686
+    }
+  ],
+  "per_label": [
+    {
+      "ชุดทดสอบ": "CIC Friday (หลัง split)",
+      "label": "normal",
+      "packets": 530098,
+      "วัด": "alert หลอก",
+      "Isolation Forest": 0.0526619606186026,
+      "Random Forest": 4.3388203690638336e-05
+    },
+    {
+      "ชุดทดสอบ": "CIC Friday (หลัง split)",
+      "label": "PortScan",
+      "packets": 42275,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.5300059136605559,
+      "Random Forest": 0.9724423418095801
+    },
+    {
+      "ชุดทดสอบ": "บ้าน: home_test_session2",
+      "label": "normal",
+      "packets": 221290,
+      "วัด": "alert หลอก",
+      "Isolation Forest": 0.0,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "บ้าน: home_test_session2",
+      "label": "Ping-iPhone",
+      "packets": 12,
+      "วัด": "จับได้",
+      "Isolation Forest": 1.0,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "บ้าน: home_test_session2",
+      "label": "PortScan-Fing",
+      "packets": 952,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.9894957983193278,
+      "Random Forest": 0.07142857142857142
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "normal",
+      "packets": 4000,
+      "วัด": "alert หลอก",
+      "Isolation Forest": 0.0045,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sS 100 port",
+      "packets": 100,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.92,
+      "Random Forest": 1.0
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sS 1000 port",
+      "packets": 1000,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.992,
+      "Random Forest": 0.999
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sS ไล่ host (port 22 x100)",
+      "packets": 100,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.98,
+      "Random Forest": 0.01
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sT (connect) 200 port",
+      "packets": 200,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.955,
+      "Random Forest": 0.975
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sU (UDP) 100 port",
+      "packets": 100,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.62,
+      "Random Forest": 0.01
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "nmap: nmap -sn ไล่ host (ping sweep)",
+      "packets": 400,
+      "วัด": "จับได้",
+      "Isolation Forest": 0.6475,
+      "Random Forest": 0.005
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "ping: ping จากเครื่อง Linux/Mac",
+      "packets": 8,
+      "วัด": "จับได้",
+      "Isolation Forest": 1.0,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "ping: ping จากเครื่อง Windows",
+      "packets": 8,
+      "วัด": "จับได้",
+      "Isolation Forest": 1.0,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "ping: ping ตัวเอง (loopback, Windows)",
+      "packets": 8,
+      "วัด": "จับได้",
+      "Isolation Forest": 1.0,
+      "Random Forest": 0.0
+    },
+    {
+      "ชุดทดสอบ": "จำลอง (ping + nmap)",
+      "label": "ping: ping รัว (flood เล็กน้อย)",
+      "packets": 60,
+      "วัด": "จับได้",
+      "Isolation Forest": 1.0,
+      "Random Forest": 0.0
+    }
+  ]
+}

@@ -2,8 +2,8 @@
 import numpy as np
 import pytest
 
-from training.common import (SCAN_DETECT_WITHIN, anomaly_scores, build_features, is_ping_scenario, is_scan_scenario,
-                             make_scenarios, recommend_threshold, scan_report, train_model)
+from training.common import (SCAN_DETECT_WITHIN, anomaly_scores, build_features, is_scan_scenario,
+                             make_scenarios, ping_request_scores, recommend_threshold, scan_report, train_model)
 from training.generate_data import generate
 
 
@@ -14,8 +14,7 @@ def trained():
     scaler, model = train_model(build_features(train), n_estimators=200, seed=42)
     hold = [p for p in generate(4000, seed=43) if p["proto"] != "ICMP"]
     s_hold = anomaly_scores(model, scaler, build_features(hold))
-    pings = np.concatenate([anomaly_scores(model, scaler, build_features(v))
-                            for k, v in make_scenarios().items() if is_ping_scenario(k)])
+    pings = ping_request_scores(model, scaler)      # echo request (ping ขาเข้า) ทุกแบบ
     thr, _ = recommend_threshold(s_hold, pings, 0.998)
     return model, scaler, s_hold, pings, thr
 
@@ -32,6 +31,7 @@ def test_ping_scores_higher_than_normal_traffic(trained):
 
 
 def test_every_ping_flagged_at_recommended_threshold(trained):
+    """ทุก echo request (ping ขาเข้า) ต้องถูกแจ้งเตือน (echo reply ของเครื่องเราเองไม่บังคับ)"""
     _, _, _, pings, thr = trained
     assert (pings >= thr).all()
 

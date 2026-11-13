@@ -106,3 +106,43 @@ def test_extract_many_matches_extract():
     ex = FeatureExtractor()
     b = np.array([ex.extract(p) for p in pkts])
     assert a.shape == (10, N_FEATURES) and np.array_equal(a, b)
+
+
+def _pkt(ts, src, dst, sport, dport, proto="TCP", flags=None, iface="eth0"):
+    return {"ts": ts, "iface": iface, "src_ip": src, "dst_ip": dst, "src_port": sport, "dst_port": dport,
+            "proto": proto, "length": 60, "ttl": 64, "tcp_flags": flags, "icmp_type": None, "icmp_code": None}
+
+
+def test_unanswered_ports_counts_scan_but_not_answered_traffic():
+    """ctx_unans_ports: port ที่ยิงไปแล้วไม่มีใครตอบ (สแกน) สูง / การเชื่อมต่อที่ได้รับการตอบ (เว็บ, DNS) ต่ำ"""
+    i_short, i_long = FEATURE_NAMES.index("ctx_unans_ports"), FEATURE_NAMES.index("ctx_unans_ports_long")
+    # สแกน: SYN 50 port ไม่มีการตอบกลับ (หรือได้ RST = ปฏิเสธ)
+    scan = []
+    for i in range(50):
+        scan.append(_pkt(1.0 + i * 0.01, "10.0.0.9", "10.0.0.1", 40000, 1 + i, flags=0x02))
+        if i % 2:
+            scan.append(_pkt(1.0 + i * 0.01 + 0.001, "10.0.0.1", "10.0.0.9", 1 + i, 40000, flags=0x14))  # RST+ACK
+    X = FeatureExtractor(5.0).extract_many(scan)
+    assert X[-2, i_short] == 50 and X[-2, i_long] == 50
+    # UDP scan เงียบๆ
+    udp = [_pkt(1.0 + i * 0.02, "10.0.0.9", "10.0.0.1", 50000, 1 + i, proto="UDP") for i in range(30)]
+    assert FeatureExtractor(5.0).extract_many(udp)[-1, i_short] == 30
+    # เว็บ: SYN -> SYN/ACK ทุกครั้ง + DNS query -> answer: ไม่ค้างเลย
+    normal, t = [], 1.0
+    for i in range(30):
+        normal += [_pkt(t, "192.168.1.5", "1.1.1.1", 50000 + i, 53, proto="UDP"),
+                   _pkt(t + 0.01, "1.1.1.1", "192.168.1.5", 53, 50000 + i, proto="UDP"),
+                   _pkt(t + 0.02, "192.168.1.5", "142.250.1.1", 51000 + i, 443, flags=0x02),
+                   _pkt(t + 0.03, "142.250.1.1", "192.168.1.5", 443, 51000 + i, flags=0x12)]
+        t += 0.1
+    X = FeatureExtractor(5.0).extract_many(normal)
+    assert X[:, i_short].max() <= 2                 # ค้างได้ชั่วครู่แค่ระหว่างรอคำตอบ
+    assert X[-1, i_short] == 0
+    # DNS server ตอบหลาย client ต่าง port = การตอบกลับ ไม่ใช่การยิงใหม่
+    server = []
+    for i in range(40):
+        server += [_pkt(1.0 + i * 0.01, f"192.168.1.{10 + i}", "192.168.1.1", 40000 + i, 53, proto="UDP"),
+                   _pkt(1.0 + i * 0.01 + 0.001, "192.168.1.1", f"192.168.1.{10 + i}", 53, 40000 + i, proto="UDP")]
+    X = FeatureExtractor(5.0).extract_many(server)
+    assert X[1::2, i_short].max() == 0
+

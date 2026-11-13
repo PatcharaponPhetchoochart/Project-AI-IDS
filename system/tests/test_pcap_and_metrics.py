@@ -37,6 +37,34 @@ def test_pcap_roundtrip_matches_capture_format(tmp_path):
     assert outs[0].stat().st_mtime == mtime
 
 
+def test_pcap_time_window(tmp_path):
+    """อ่านเฉพาะช่วงเวลา (pcap_time_windows) + cache ต้องแปลงใหม่เมื่อช่วงเวลาเปลี่ยน"""
+    from shared.utils import scapy_env
+    scapy_env()
+    from scapy.all import IP, TCP, Ether, wrpcap
+
+    from training.pcap_to_csv import convert, convert_folder
+
+    pkts = []
+    for i in range(100):                                      # 1 packet ต่อวินาที ที่ t=1000..1099
+        p = Ether() / IP(src="10.0.0.9", dst="10.0.0.1") / TCP(sport=40000, dport=i + 1, flags="S")
+        p.time = 1000.0 + i
+        pkts.append(p)
+    src = tmp_path / "in"
+    src.mkdir()
+    wrpcap(str(src / "f.pcap"), pkts)
+
+    stats = convert([src / "f.pcap"], tmp_path / "w.csv", start=1010, end=1019)
+    rows = load_packets_csv(tmp_path / "w.csv")
+    assert stats["written"] == 10 and [r["dst_port"] for r in rows] == list(range(11, 21))
+
+    out = convert_folder(src, tmp_path / "out", windows={"f": [1010, 1019]})[0]
+    assert len(load_packets_csv(out)) == 10
+    convert_folder(src, tmp_path / "out", windows={"f": [1050, 1059.5]})
+    assert load_packets_csv(out)[0]["dst_port"] == 51         # ช่วงเวลาเปลี่ยน -> แปลงใหม่
+    convert_folder(src, tmp_path / "out")
+    assert len(load_packets_csv(out)) == 100                  # เอาช่วงเวลาออก -> แปลงทั้งไฟล์
+
 def test_label_rules(tmp_path):
     f = tmp_path / "labels.csv"
     f.write_text("# comment\nlabel,src_ip,dst_ip,start,end,both_directions,note\n"

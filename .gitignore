@@ -16,3 +16,8 @@ data/pcap_csv/
 system/models/*
 !system/models/.gitkeep
 data/normal_features.csv
+
+# traffic ที่บันทึกจากบ้าน (ใหญ่หลายร้อย MB + เป็นข้อมูลส่วนตัวของเครือข่าย) ไม่เก็บใน git
+data/home_*.csv
+data/soak_*.csv
+data/captured_*.csv
