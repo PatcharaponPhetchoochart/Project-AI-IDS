@@ -21,7 +21,7 @@ capture:
   # ดูรายชื่อที่ใช้ได้: python system/scripts/list_interfaces.py
   # ถ้าเสียบสายเข้าพอร์ต SPAN ให้ใส่ชื่อ interface ของ NIC ที่รับ SPAN (เช่น "Ethernet")
   interfaces:
-    - "Ethernet"
+    - "Wi-Fi"
     - "loopback"
   # โหมด: zmq = ส่งเข้าระบบ | csv = บันทึกลงไฟล์ไว้เทรนข้อมูลจริง | both = ทำทั้งคู่
   mode: zmq
