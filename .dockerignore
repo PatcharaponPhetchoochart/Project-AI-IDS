@@ -1,0 +1,15 @@
+.git
+.gitignore
+training
+data
+system/models
+system/tests
+system/docs
+system/.cache
+system/.pytest_cache
+*.pyc
+__pycache__
+.pytest_cache
+*.pdf
+FIRST_STEP.*
+README.pdf

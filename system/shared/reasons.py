@@ -33,6 +33,32 @@ def explain(meta: dict, vector: list | None = None) -> str:
     if unans_long >= 20:
         return f"Slow port scan: {int(unans_long)} ports probed without reply within 60s"
 
+    # v4 (A-F): สัญญาณจากพฤติกรรม/ปริมาณที่ v3 ยังไม่ครอบ (threshold เป็นค่าประมาณ ปรับได้)
+    same_endpoint = feats.get("ctx_same_endpoint", 0)
+    if same_endpoint >= 15:
+        return f"Brute force / repeated requests: {int(same_endpoint)} connections to the same endpoint within 5s"
+
+    half_open = feats.get("ctx_half_open", 0)
+    if half_open >= 8:
+        return f"Possible slowloris: {int(half_open)} TCP connections held open without closing"
+
+    beacon_cv = feats.get("ctx_beacon_cv")
+    ctx_pkts = feats.get("ctx_pkts", 0)
+    if beacon_cv is not None and beacon_cv < 0.12 and ctx_pkts >= 4:
+        return "Possible periodic beacon (C2) - very regular timing to the same destination"
+
+    dns_qlen = feats.get("dns_qlen", 0)
+    if dns_qlen and dns_qlen >= 50:
+        return f"Unusually long DNS query name ({int(dns_qlen)} chars) - possible DNS tunneling"
+
+    dns_qrate = feats.get("ctx_dns_qrate", 0)
+    if dns_qrate >= 20:
+        return f"Unusually high DNS query rate: {int(dns_qrate)} queries within 5s - possible DNS tunneling"
+
+    bytes_sum = feats.get("ctx_bytes", 0)
+    if bytes_sum >= 2_000_000:
+        return f"High-volume burst: {int(bytes_sum):,} bytes from this source within 5s"
+
     ports = feats.get("ctx_low_ports", 0)
     ips = feats.get("ctx_dst_ips", 0)
     if ports >= 15:

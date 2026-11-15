@@ -1,0 +1,60 @@
+# ============================================================
+# config สำหรับรัน Home NIDS ใน Docker (Linux container)
+# ต่างจาก config/config.yaml (native Windows) แค่ 2 จุด: capture.interfaces และ detection.ping_only
+# path อื่นเป็น relative เหมือนกัน (resolve จาก /app ข้างใน container = เทียบเท่ารากโปรเจกต์)
+# ============================================================
+
+bus:
+  host: "127.0.0.1"
+  ports:
+    packets: 5555
+    features: 5556
+    detections: 5557
+
+capture:
+  # "any" = Linux pseudo-interface ดักทุก interface พร้อมกัน (เหมือน tcpdump -i any)
+  #   ใช้แทนการเดาชื่อ eth0/wlan0 ที่เปลี่ยนไปตามเครื่อง/network mode ของ Docker
+  # "loopback" = lo (traffic ภายในเครื่อง/container เอง)
+  interfaces:
+    - "any"
+    - "loopback"
+  mode: zmq
+  csv_path: "data/captured_packets.csv"
+  ignore_loopback_tcp: true
+  extra_bpf: ""
+  stats_interval_sec: 30
+
+feature:
+  window_sec: 5
+
+detection:
+  model_path: "system/models/iforest.joblib"
+  scaler_path: "system/models/scaler.joblib"
+  meta_path: "system/models/meta.json"
+  threshold: auto
+  batch_size: 256
+  # false เพราะเป้าหมายของ Docker lab นี้คือทดสอบ scan/flood/brute-force/C2 ฯลฯ ไม่ใช่แค่ ping
+  ping_only: false
+
+alert:
+  cooldown_sec: 10
+  realtime: true
+  db_path: "data/alerts.db"
+
+monitor:
+  show_normal: true
+  max_normal_lines_per_sec: 40
+
+training:
+  seed: 42
+  n_packets: 8000
+  packets_csv: "data/normal_packets.csv"
+  features_csv: "data/normal_features.csv"
+  fp_quantile: 0.998
+  n_estimators: 1000
+  pcap_normal_dir: "training/pcap/normal"
+  pcap_test_dir: "training/pcap/test"
+  labels_file: "training/pcap/labels.csv"
+  pcap_csv_dir: "data/pcap_csv"
+  max_packets_per_pcap: 2000000
+  pcap_time_windows: {}

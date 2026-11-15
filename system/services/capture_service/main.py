@@ -47,7 +47,8 @@ def resolve_interfaces(names: list[str], conf, log) -> list[tuple[str, object]]:
 
 
 def packet_to_meta(pkt, iface_label: str) -> dict | None:
-    """แปลง Scapy packet เป็น metadata dict (เฉพาะ IPv4) — ไม่เก็บ payload"""
+    """แปลง Scapy packet เป็น metadata dict (เฉพาะ IPv4) — ไม่เก็บ payload
+    ยกเว้น DNS query name ที่เก็บแค่ "ความยาว" (dns_qlen, feature E) ไม่เก็บชื่อจริง เพื่อจับ DNS tunneling"""
     from scapy.layers.inet import ICMP, IP, TCP, UDP
 
     ip = pkt.getlayer(IP)
@@ -62,12 +63,24 @@ def packet_to_meta(pkt, iface_label: str) -> dict | None:
         "length": int(ip.len) if ip.len else len(ip),
         "ttl": int(ip.ttl),
         "tcp_flags": None, "icmp_type": None, "icmp_code": None,
+        "dns_qlen": None,
     }
     tcp, udp, icmp = pkt.getlayer(TCP), pkt.getlayer(UDP), pkt.getlayer(ICMP)
     if tcp is not None:
         meta.update(proto="TCP", src_port=int(tcp.sport), dst_port=int(tcp.dport), tcp_flags=int(tcp.flags))
     elif udp is not None:
         meta.update(proto="UDP", src_port=int(udp.sport), dst_port=int(udp.dport))
+        if udp.dport == 53 or udp.sport == 53:
+            try:
+                from scapy.layers.dns import DNS
+                dns = pkt.getlayer(DNS)
+                if dns is not None and dns.qdcount and dns.qd is not None:
+                    qname = dns.qd.qname
+                    if isinstance(qname, bytes):
+                        qname = qname.decode("utf-8", "replace")
+                    meta["dns_qlen"] = len(str(qname).rstrip("."))
+            except Exception:  # noqa: BLE001  DNS parse พังไม่ควรทำให้ packet ทั้งตัวเสีย
+                pass
     elif icmp is not None:
         meta.update(proto="ICMP", icmp_type=int(icmp.type), icmp_code=int(icmp.code))
     return meta

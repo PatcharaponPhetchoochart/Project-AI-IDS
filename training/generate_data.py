@@ -57,11 +57,13 @@ class Gen:
             self.servers.append((ip, base, int(self.rng.integers(6, 18))))
 
     # ---------- ตัวช่วย ----------
-    def add(self, ts, src, dst, sport, dport, proto, length, ttl, flags=None, itype=None, icode=None):
+    def add(self, ts, src, dst, sport, dport, proto, length, ttl, flags=None, itype=None, icode=None,
+            dns_qlen=None):
         self.pkts.append({
             "ts": float(ts), "iface": IFACE, "src_ip": src, "dst_ip": dst,
             "src_port": sport, "dst_port": dport, "proto": proto, "length": int(length),
             "ttl": int(ttl), "tcp_flags": flags, "icmp_type": itype, "icmp_code": icode,
+            "dns_qlen": dns_qlen,
         })
 
     def client(self):
@@ -229,7 +231,7 @@ def save_packets_csv(pkts: list[dict], path: Path) -> None:
 
 def load_packets_csv(path: Path) -> list[dict]:
     """อ่าน CSV metadata (ทั้งของ synthetic และที่ capture-service บันทึก) -> list[dict] พร้อมแปลงชนิดข้อมูล"""
-    int_cols = ("src_port", "dst_port", "length", "ttl", "tcp_flags", "icmp_type", "icmp_code")
+    int_cols = ("src_port", "dst_port", "length", "ttl", "tcp_flags", "icmp_type", "icmp_code", "dns_qlen")
     out = []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):

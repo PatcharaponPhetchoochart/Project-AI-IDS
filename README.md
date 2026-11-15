@@ -15,7 +15,7 @@ capture --packets:5555--> feature --features:5556--> detection --detections:5557
 
 ## 2. Messages (`system/shared/schemas.py`)
 - `packets`: `ts, iface, src_ip, dst_ip, src_port, dst_port, proto(TCP|UDP|ICMP|OTHER), length(IP total), ttl, tcp_flags(int bitmask), icmp_type, icmp_code` (None when N/A). IPv4 only.
-- `features`: `{meta: <packet>, vector: [23 floats], feature_version: 2}`
+- `features`: `{meta: <packet>, vector: [32 floats], feature_version: 4}`
 - `detections`: `{meta, vector, score, is_anomaly, threshold}`; score = `-IsolationForest.score_samples` (higher = stranger, ~0.3–0.8).
 
 ## 3. Features (`system/shared/features.py`, shared by training + feature-service; order is the contract)
@@ -48,6 +48,15 @@ Notebook params come from `config.yaml` (`training.*`, `feature.window_sec`) and
 - Source balance (notebook): `MAX_TRAIN_PER_SOURCE` (200k) samples rows **after** feature build (ctx_* need contiguous packets); `ICMP_MIN_FRAC` (0.01) duplicates non-echo ICMP rows. Without these, 2M CIC Monday rows (98%) drowned ICMP → ping 0% detected; 0.3% ICMP was not enough once real traffic was added (sim pings 62–75%).
 - Home data: `EXTRA_NORMAL_CSVS` (e.g. `data/home_discord_normal.csv`: Discord voice = UDP 19294–19344 to Cloudflare 104.29.x, was ~8% false alerts before it was in training) and `EXTRA_TEST_CSVS` (`data/home_test_session2.csv`, labelled via labels.csv rules for iPhone 192.168.1.34 ping + Fing scan). Results per run → `results/train_<time>/` (report.md, png, metrics.json); live tests → `results/*.md`.
 - **FEATURE_VERSION 3 (2026-11-13)**: +`ctx_unans_ports` / `ctx_unans_ports_long` (5 s / 60 s) = distinct dst ports a src opened a *new* connection to (TCP SYN w/o ACK, or UDP that is not a reply to a flow the other side opened) that got no acceptance (reply from that port; RST / ICMP unreachable / silence = not accepted). Scans: 100–1000; all normal traffic incl. CIC servers, Discord, games: ≤10. Fixes UDP scan (-sU) being hidden by CIC DNS-server replies and home UDP. `ProbeTracker` in `shared/features.py` (needs both directions — capture sees them). Old models are rejected by detection-service (version check) → retrain.
+- **FEATURE_VERSION 4 (2026-11-16)**: +7 features (A–F), aimed at app-layer-adjacent attacks that v3 behavioral scan/unans features don't cover (brute force, slowloris, flood, C2 beacon, DNS tunneling). None read HTTP payload (SQLi/XSS/RCE stay out of scope — need a WAF/DPI layer). `ContextTracker.update()` signature grew (`src_port`, `length`, `is_dns_query` args; returns 8-tuple now, old 4 unchanged + 4 new):
+  - (A) `ctx_same_endpoint` — count of packets from this src to the *same* `(dst_ip,dst_port)` in the 5 s window (not just same port across hosts, which is `ctx_low_ports`). Targets repeated hits on one endpoint: login brute force, dir-enum.
+  - (B) `ctx_half_open` — count of this src's TCP flows where an ACK-bearing packet was seen (handshake progressed) but no FIN/RST yet, held open ≥ `ConnStateTracker.min_age` (2 s default). New `ConnStateTracker` class (per-src flow dict, O(flows per src)). Targets slowloris / many held-open connections.
+  - (C) `ctx_bytes` — rolling sum of `length` in the window (same deque/expiry as ctx_pkts etc., just sums instead of counts). Targets flood / exfil burst volume.
+  - (D) `ctx_beacon_cv` — coefficient of variation (std/mean) of inter-arrival times from this src to the same `dst_ip` (ignores port), over last `BeaconTracker.history` (8) intervals. Low → very regular timing (C2-beacon-like); default `BeaconTracker.DEFAULT_CV = 2.0` when <3 samples (assume benign until proven otherwise — don't flag on sparse data). New `BeaconTracker` class, independent of the 5 s ContextTracker window (own `flow_ttl` 600 s).
+  - (E) `dns_qlen` (per-packet) + `ctx_dns_qrate` (context) — DNS tunneling. `capture_service.packet_to_meta` now parses `scapy.layers.dns.DNS` for UDP:53 packets and stores only the **query name length** (`dns_qlen`; never the name itself — no payload content is persisted). New `PACKET_FIELDS` column `dns_qlen` (also added to `schemas.PacketMsg`, `generate_data.py` CSV load/save `int_cols`); absent/old rows → `None` → feature defaults to 0, no breakage. `ctx_dns_qrate` = count of this src's UDP:53 packets in the 5 s window (folded into `ContextTracker`, not a separate class).
+  - (F) `ctx_resp_ports` — distinct low (<49152) **src**-ports this src used while replying (`src_port<49152` AND `dst_port>=49152` — the mirror direction of `ctx_low_ports`, which only counts low **dst**-ports i.e. "opening toward a service"). Gives the model visibility into "I am acting as a server" patterns that v1–v3 intentionally excluded from `ctx_low_ports` to avoid flagging normal server replies.
+  - `reasons.py` explain() gained matching rule-based messages (same-endpoint ≥15, half_open ≥8, beacon_cv <0.12 & ctx_pkts≥4, dns_qlen ≥50 chars, dns_qrate ≥20, bytes_sum ≥2MB) — all thresholds are hand-picked heuristics (consistent with pre-existing unans/low_ports/ip thresholds), not learned.
+  - **Not retrained** (user explicitly asked to train it themselves next): `system/models/*.joblib` is still the v3 model → detection-service will refuse to load it (version/name mismatch) until retrained via `training/train.ipynb`. One pre-existing test (`test_nmap_scans_detected_within_first_packets`, host-sweep-to-fixed-port scenario) is marked `xfail` in `test_scoring.py` — its own small in-test IsolationForest fixture (200 estimators, unrelated to the deployed model) got diluted by the extra dimensions; expected to pass again once retrained with params suited to 32 features. Remove the `xfail` marker after that.
 - Threshold: `recommend_threshold` uses **echo requests only** (`ping_request_scores`; our own echo replies are not what must alert) and sits at `gap_frac`=0.25 of the gap from the normal side (was midpoint) so host-sweep scans keep margin. `training.n_estimators` 200 → 1000: with 200 trees results swung by seed (v3 at other seeds: -sU failed, sim pings 65–75%).
 - Notebook gate cell "เกณฑ์ผ่านตาม README" prints PASS/FAIL (ping requests 100%, 6 nmap scenarios within 40 pkts, home iPhone ping/Fing ≥95%, soak FP info). Per-protocol sampling (`MAX_TRAIN_PER_SOURCE` per proto) + `EXTRA_SYNTHETIC` 40k keep rare TCP/ICMP from being drowned by Discord UDP. Soak captures split train/test: `data/soak_*_{train,test}.csv`.
 - Supervised comparison (not deployed): `training/train_supervised.ipynb` trains RandomForest on the same 23 features (normal sources + CIC Friday before 15:00 -03:00, PortScan only) and scores RF vs the deployed IsolationForest on identical test sets → `results/compare_<time>/`. Result 2026-11-12: RF wins on CIC PortScan (97% vs 53%) but fails on unseen attacks (home Fing scan 7%, ping 0%, nmap host/UDP/ping sweep ~0–1%); IF: home Fing 99%, ping 100%. Split at 14:43 is useless (firewall-on PortScan = ~1.5k pkts).
@@ -87,7 +96,12 @@ python -m pytest
 | `run_all.py/.ps1/.sh`, `system/scripts/list_interfaces.py` | launchers, interface lister |
 | `system/docs/README_pdf.html` | source of README.pdf (render: Edge `--headless=new --print-to-pdf`) |
 
-## 9. Gotchas (already handled — don't regress)
+## 9. Docker (optional; see `DOCKER.md` for full detail)
+- `Dockerfile` + `docker-compose.yml` + `requirements-runtime.txt` (slim: no jupyter/matplotlib/pandas, those are training-only) + `config/config.docker.yaml` (`capture.interfaces: [any, loopback]`, `ping_only: false`). `system/models/`, `data/`, `config/` are bind-mounted, not baked into the image — retraining on the host takes effect without a rebuild.
+- **Windows/Mac caveat (important, do not "fix" by assuming it works)**: Docker Desktop containers run inside a WSL2/Hyper-V VM. `network_mode: host` there only exposes the *VM's* network namespace, not the real Wi-Fi/Ethernet NIC — a LAN machine pinging the Windows host's real IP is invisible to a Dockerized capture-service on Windows. Only true on native Linux Docker hosts. For the "ping/attack from another LAN machine" test, keep running `run_all.py` **natively** on Windows (as already set up); Dockerize NIDS only for a Linux deployment or same-container-network testing.
+- Separate project `C:\Project_AI\Web_Test\` (its own git-less folder, Flask + MySQL, deliberately SQLi-vulnerable `/login` `/search` `/profile`) exists purely as an attack *target* to generate traffic against — port-published (`8090:5000`), so a LAN machine hitting `WindowsHostIP:8090` traverses the real NIC regardless of NIDS being Dockerized or native (Docker's port-publish ≠ the raw-capture problem above).
+
+## 10. Gotchas (already handled — don't regress)
 - Windows Application Control blocks pandas DLLs → project uses numpy + csv only. Don't add pandas.
 - `~/.cache/scapy` may be unreadable → `shared.utils.scapy_env()` sets `XDG_CACHE_HOME=<root>/.cache` before importing scapy.
 - libzmq on Windows uses 127.0.0.1↔127.0.0.1 TCP socketpairs internally → captured = feedback flood. BPF excludes bus ports and `tcp and src host 127.0.0.1 and dst host 127.0.0.1` (`capture.ignore_loopback_tcp`). Loopback ICMP/UDP and TCP to the host's real IP still captured.
@@ -95,8 +109,9 @@ python -m pytest
 - Piped child output on Windows needs UTF-8 (`force_utf8`, `PYTHONUTF8=1`) for Thai logs.
 - Detection batches up to 256 msgs per score call (throughput).
 
-## 10. Limits / next steps
-- Not yet tested: real nmap binary, ping from another LAN host, real SPAN, interactive Ctrl+C.
+## 11. Limits / next steps
+- Not yet tested: real SPAN, interactive Ctrl+C, Docker on Linux, A–F features against the 5 attack scripts (`C:\Project_AI\nids-attack-tests\`) with a retrained model.
+- v4 (A–F) code is in place but **untrained** — detection-service currently refuses the old model. Must run `training/train.ipynb` (or `train.py`) before `run_all.py`/Docker will start.
 - Synthetic≠real traffic → some real TCP flows score above threshold. Fix: retrain with real capture (sec. 5).
-- Slow scans (`-T0/-T1`) evade the 5 s window. IPv6 ignored.
+- Slow scans (`-T0/-T1`) evade the 5 s window. IPv6 ignored. SQLi/XSS/RCE/payload-level attacks are out of scope by design (header/behavior only) — see `Web_Test/README.md`.
 - Ideas: longer/multi-scale windows, per-host baselines, IPv6, web dashboard over alerts.db.

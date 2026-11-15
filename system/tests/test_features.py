@@ -100,6 +100,95 @@ def test_context_is_per_source_ip():
     assert f["ctx_pkts"] == 1
 
 
+# ----------------------------------------------------------------- v4 feature A-F
+def test_same_endpoint_counts_repeated_connections_to_one_port():
+    """feature A: brute force / dir-enum ยิงรัวไป endpoint (dst_ip,dst_port) เดิมซ้ำๆ"""
+    ex = FeatureExtractor()
+    out = []
+    for i in range(5):
+        out.append(as_dict(ex.extract(pkt(ts=1000.0 + i * 0.05, dst_ip="10.0.0.9", dst_port=22))))
+    assert [o["ctx_same_endpoint"] for o in out] == [1, 2, 3, 4, 5]
+    # endpoint อื่น (คนละ port) ของ src เดียวกัน นับแยก ไม่ปนกับตัวแรก
+    f = as_dict(ex.extract(pkt(ts=1000.3, dst_ip="10.0.0.9", dst_port=80)))
+    assert f["ctx_same_endpoint"] == 1
+
+
+def test_half_open_connections_for_slowloris():
+    """feature B: handshake เสร็จ (เห็น ACK) แต่ไม่ปิด (ไม่มี FIN/RST) ค้างเกิน min_age -> นับเป็น half-open"""
+    ex = FeatureExtractor()
+    attacker = "10.0.0.50"
+    t = 1000.0
+    for i, port in enumerate(range(80, 85)):   # เปิด 5 connection, SYN แล้วตามด้วย ACK ทันที ไม่ปิดเลย
+        ex.extract(pkt(ts=t, src_ip=attacker, dst_ip="10.0.0.1", src_port=40000 + i, dst_port=port, tcp_flags=0x02))
+        ex.extract(pkt(ts=t + 0.01, src_ip=attacker, dst_ip="10.0.0.1", src_port=40000 + i, dst_port=port,
+                       tcp_flags=0x10))
+        t += 0.02
+    f = as_dict(ex.extract(pkt(ts=t + 3.0, src_ip=attacker, dst_ip="10.0.0.1",
+                              src_port=40099, dst_port=86, tcp_flags=0x02)))
+    assert f["ctx_half_open"] == 5                 # ครบ min_age (2s) ทั้ง 5 connection
+    # ปิดไปทีละตัวด้วย FIN -> นับลดลง
+    ex.extract(pkt(ts=t + 3.1, src_ip=attacker, dst_ip="10.0.0.1", src_port=40000, dst_port=80, tcp_flags=0x11))
+    g = as_dict(ex.extract(pkt(ts=t + 3.2, src_ip=attacker, dst_ip="10.0.0.1",
+                              src_port=40098, dst_port=87, tcp_flags=0x02)))
+    assert g["ctx_half_open"] == 4
+
+
+def test_bytes_sum_accumulates_and_expires():
+    """feature C: ผลรวม byte ใน window -> flood / exfil burst"""
+    ex = FeatureExtractor(window_sec=5.0)
+    f = None
+    for i in range(3):
+        f = as_dict(ex.extract(pkt(ts=1000.0 + i * 0.1, length=1000)))
+    assert f["ctx_bytes"] == 3000
+    f2 = as_dict(ex.extract(pkt(ts=1010.0, length=500)))     # ห่างเกิน window -> เหลือแค่ตัวเอง
+    assert f2["ctx_bytes"] == 500
+
+
+def test_beacon_cv_low_for_regular_timing_high_default_otherwise():
+    """feature D: จังหวะสม่ำเสมอ (C2 beacon) -> CV ต่ำ / ข้อมูลไม่พอ -> ค่าเริ่มต้น"""
+    ex = FeatureExtractor()
+    f = as_dict(ex.extract(pkt(ts=1000.0, dst_ip="8.8.8.8")))
+    assert f["ctx_beacon_cv"] == 2.0                          # BeaconTracker.DEFAULT_CV: ข้อมูลไม่พอ
+
+    ex2 = FeatureExtractor()
+    f = None
+    for i in range(10):                                        # เคาะจังหวะเท่ากันทุก 2 วินาทีเป๊ะ ไปยัง dst เดิม
+        f = as_dict(ex2.extract(pkt(ts=1000.0 + i * 2.0, dst_ip="8.8.8.8", dst_port=443)))
+    assert f["ctx_beacon_cv"] < 0.05                          # แทบไม่มีความแปรปรวนเลย = คล้าย beacon
+
+
+def test_dns_qlen_feature_passes_through_metadata():
+    """feature E: ความยาวชื่อ DNS query ส่งผ่านจาก meta ตรงๆ (capture-service เป็นคนคำนวณ)"""
+    ex = FeatureExtractor()
+    f = as_dict(ex.extract(pkt(proto="UDP", dst_port=53, dns_qlen=42)))
+    assert f["dns_qlen"] == 42
+    g = as_dict(ex.extract(pkt(proto="UDP", dst_port=53)))     # ไม่มี dns_qlen ใน meta -> default 0
+    assert g["dns_qlen"] == 0
+
+
+def test_dns_query_rate_counts_only_queries_to_port_53():
+    """feature E: ctx_dns_qrate นับเฉพาะ UDP:53 ไม่รวม UDP port อื่น"""
+    ex = FeatureExtractor()
+    f = None
+    for i in range(4):
+        f = as_dict(ex.extract(pkt(ts=1000.0 + i * 0.1, proto="UDP", dst_port=53, src_port=50000 + i)))
+    assert f["ctx_dns_qrate"] == 4
+    g = as_dict(ex.extract(pkt(ts=1000.5, proto="UDP", dst_port=12345)))   # UDP ธรรมดา ไม่ใช่ DNS
+    assert g["ctx_dns_qrate"] == 4                              # ยังนับแค่ 4 query ก่อนหน้า ไม่เพิ่มจาก packet นี้
+
+
+def test_resp_ports_counts_low_source_port_responses_separately():
+    """feature F: ทิศทาง "ตอบกลับจาก port ต่ำ" แยกจาก ctx_low_ports (ทิศทางเปิดการเชื่อมต่อใหม่)"""
+    ex = FeatureExtractor()
+    server = "10.0.0.1"
+    f = None
+    for i in range(3):   # server ตอบกลับ client หลายตัวจาก src_port 80 เดิม (เว็บ server ปกติ)
+        f = as_dict(ex.extract(pkt(ts=1000.0 + i * 0.1, src_ip=server, src_port=80,
+                                   dst_ip=f"10.0.0.{10 + i}", dst_port=50000 + i)))
+    assert f["ctx_resp_ports"] == 1       # ใช้ src_port 80 ซ้ำทุกครั้ง -> distinct ต่ำ = 1
+    assert f["ctx_low_ports"] == 0        # ทิศทางนี้ dst_port สูง ไม่ถูกนับเป็น low_ports ปกติ
+
+
 def test_extract_many_matches_extract():
     pkts = [pkt(ts=1000.0 + i * 0.1, dst_port=80 + i % 3) for i in range(10)]
     a = FeatureExtractor().extract_many(pkts)

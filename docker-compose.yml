@@ -1,0 +1,17 @@
+services:
+  nids:
+    build: .
+    container_name: home-nids
+    restart: unless-stopped
+    # network_mode: host ให้ container ใช้ network namespace เดียวกับเครื่องที่รัน Docker
+    # บน Linux จริง = เห็น interface จริงของเครื่อง (eth0/wlan0) ได้เลย
+    # บน Windows/Mac (Docker Desktop/WSL2) = เห็นแค่ network namespace ของ WSL2 VM ไม่ใช่ Wi-Fi จริงของ Windows
+    #   -> ping/scan จากเครื่องอื่นใน LAN จะไม่ถูกดักเห็นจากใน container นี้ (ดูคำอธิบายเต็มใน DOCKER.md)
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./config:/app/config                  # แก้ config.docker.yaml แล้วไม่ต้อง build ใหม่
+      - ./system/models:/app/system/models    # โมเดลที่เทรนบนเครื่อง host (Jupyter) ใช้ตัวเดียวกับใน container
+      - ./data:/app/data                      # alerts.db, captured_packets.csv ฯลฯ

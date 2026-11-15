@@ -30,6 +30,7 @@ class PacketMsg:
     tcp_flags: Optional[int] = None   # bitmask (FIN=1 SYN=2 RST=4 PSH=8 ACK=16 URG=32 ECE=64 CWR=128)
     icmp_type: Optional[int] = None
     icmp_code: Optional[int] = None
+    dns_qlen: Optional[int] = None    # v4: ความยาวชื่อ DNS query (เฉพาะ packet DNS) ใช้จับ DNS tunneling
 
     def to_dict(self) -> dict:
         return asdict(self)
