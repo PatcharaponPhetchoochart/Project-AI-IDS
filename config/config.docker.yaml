@@ -12,11 +12,13 @@ bus:
     detections: 5557
 
 capture:
-  # "any" = Linux pseudo-interface ดักทุก interface พร้อมกัน (เหมือน tcpdump -i any)
-  #   ใช้แทนการเดาชื่อ eth0/wlan0 ที่เปลี่ยนไปตามเครื่อง/network mode ของ Docker
-  # "loopback" = lo (traffic ภายในเครื่อง/container เอง)
+  # ทดสอบจริงแล้ว (2026-11-16): Scapy build นี้ไม่มี pseudo-interface "any" (resolve_iface หาไม่เจอ
+  # -> ข้ามไปเฉย ๆ ไม่ทำให้ล้ม) ส่วน "default"/eth0 บน network_mode: host ของ Windows/Docker Desktop
+  # คือ NIC เสมือนของ WSL2 VM (เช่น 192.168.65.x) ไม่ใช่ Wi-Fi จริงของเครื่อง (ดู caveat ใน DOCKER.md)
+  # ถ้า container ได้ interface ชื่ออื่น ดูด้วย: docker compose run --rm --entrypoint
+  #   "python system/scripts/list_interfaces.py" nids
   interfaces:
-    - "any"
+    - "default"
     - "loopback"
   mode: zmq
   csv_path: "data/captured_packets.csv"

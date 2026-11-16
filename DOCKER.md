@@ -27,6 +27,20 @@ container ที่ `network_mode: host` จะเห็นแค่ network nam
 - ทดสอบ pipeline ข้าม container (capture เห็น traffic ที่เกิดขึ้น "ข้างใน" Docker network) บน Windows
 - **ไม่ใช่** วิธีหลักสำหรับทดสอบ "ยิงจากเครื่องอื่นใน LAN" บน Windows — ให้รัน native ตามเดิม
 
+## ทดสอบจริงแล้ว (2026-11-16, Windows + Docker Desktop 4.90 / WSL2)
+- `docker compose build` ผ่าน (ใช้เวลาแรก ~4-5 นาที ดาวน์โหลด scikit-learn)
+- `docker compose up` รันได้ ดัก packet ได้ปกติ (`interfaces: [default, loopback]` -> `eth0` + `lo`)
+  - Scapy build นี้**ไม่มี** pseudo-interface `"any"` (`resolve_iface` หาไม่เจอ แต่ capture-service ข้ามให้เอง
+    ไม่ล้มทั้งระบบ) ถ้าใช้ image/เครื่องอื่นแล้วเจอแบบนี้อีก ใช้ `"default"` แทน
+  - ยืนยันคำเตือนข้างบนจริง: `eth0` ข้างใน container คือ IP วง `192.168.65.x` (Docker Desktop internal/WSL2)
+    ไม่ใช่ Wi-Fi จริงของเครื่อง (ที่เป็น `192.168.10.x` ตอนทดสอบ)
+  - **ยืนยันว่าระบบปฏิเสธโมเดลเก่าถูกต้อง**: มีไฟล์ `system/models/*.joblib` ของ v3 ค้างอยู่ (เทรนไว้ก่อนเพิ่ม
+    feature A-F) → detection-service ขึ้น `ERROR model features do not match shared/features.py - retrain
+    the model` ทุกรอบ, `run_all.py` เห็น exit code 2 แล้วหยุดทุก service ถูกต้อง, `restart: unless-stopped`
+    ทำให้วนลองใหม่เรื่อยๆ (ไม่เป็นไร แค่ไม่มีประโยชน์จนกว่าจะเทรนโมเดลใหม่ — `docker compose stop nids` ไว้ก่อนได้)
+- Web_Test (Flask+MySQL ใน docker-compose คนละตัว) ทดสอบ SQLi ทั้ง 3 จุดผ่าน `curl` แล้ว: auth-bypass login,
+  UNION-based search, numeric profile — ดู `Web_Test/README.md`
+
 ## วิธีรัน (Linux หรือยอมรับข้อจำกัดข้างบนแล้ว)
 
 ```bash
