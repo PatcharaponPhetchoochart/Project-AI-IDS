@@ -37,6 +37,18 @@ C2 beacon, DNS tunneling) -- ทุกตัวคำนวณจาก header +
                            -> DNS tunneling (query ชื่อยาวผิดปกติ, ยิง query ถี่ผิดปกติ)
   (F) ctx_resp_ports     = จำนวน src port ต่ำ (<49152) ที่ src นี้ "ใช้ตอบกลับ" (src_port ต่ำ, dst_port สูง)
                            ไม่ซ้ำกัน แยกออกจาก ctx_low_ports (ทิศทางตรงข้าม) ให้โมเดลเห็นพฤติกรรมสองทิศทางแยกกัน
+
+feature v5 (G-I): ดึงรายละเอียดจาก header ลึกขึ้น (มาจาก full .pcap capture) เพื่อแยก "traffic ปกติหนักๆ"
+(เช่น HTTPS/QUIC ไป CDN ใหญ่) ออกจาก noise ที่ทำให้ feature A/B (v4) alert ผิด -- ยังไม่แตะ payload ที่เข้ารหัส
+(TLS/QUIC application data อ่านไม่ได้อยู่ดี) ดึงเฉพาะส่วนที่เป็น header/handshake ที่ไม่เข้ารหัส:
+  (G) tcp_window/tcp_mss/tcp_wscale/tcp_sack_ok/tcp_ts_present = ลายนิ้วมือ TCP handshake (เฉพาะ option
+      ที่ส่งมาจริงใน packet นั้น, ส่วนใหญ่มีแค่ตอน SYN/SYN-ACK) -- OS/browser จริงตั้งค่าชุดนี้สม่ำเสมอตามสแตก
+      เครือข่าย ส่วนเครื่องมือสแกน/สคริปต์เขียนเองมักขาด/ผิดจากที่ stack จริงตั้ง ช่วยแยกได้แม้ port/flag เหมือนกัน
+  (H) dns_qtype/dns_rcode = ชนิด DNS query (A/AAAA/...) + ผลลัพธ์ (NOERROR/NXDOMAIN/...) เสริม dns_qlen เดิม
+      ให้เห็นภาพกว้างขึ้นว่า query นี้ "ได้คำตอบปกติ" หรือไม่ (DNS tunneling มักตั้ง type แปลกๆ/ไม่ได้คำตอบ)
+  (I) tls_sni_known = ปลายทาง TLS ClientHello (SNI) ตรงกับโดเมนของผู้ให้บริการใหญ่ที่รู้จัก (CDN/cloud) หรือไม่
+      -- อ่านได้เฉพาะ TCP (ส่วน handshake เริ่มต้นของ TLS ไม่เข้ารหัส) QUIC/UDP ยังอ่านไม่ได้ (เข้ารหัสทั้งเฟรม)
+      เก็บแค่ "รู้จักหรือไม่" (0/1) ไม่เก็บชื่อโดเมนจริงลง CSV (ตามแนวเดียวกับ dns_qlen ที่ไม่เก็บชื่อจริง)
 """
 from __future__ import annotations
 
@@ -44,13 +56,19 @@ from collections import Counter, deque
 
 import numpy as np
 
-FEATURE_VERSION = 4
+FEATURE_VERSION = 5
 
 # คอลัมน์ metadata ดิบ (ตรงกับ PacketMsg และไฟล์ CSV ที่ capture-service บันทึก)
 PACKET_FIELDS = [
     "ts", "iface", "src_ip", "dst_ip", "src_port", "dst_port",
     "proto", "length", "ttl", "tcp_flags", "icmp_type", "icmp_code",
     "dns_qlen",   # v4 (feature E): ความยาวชื่อ DNS query (เฉพาะ packet DNS) -- None สำหรับ packet อื่น
+    # v5 (feature G): ลายนิ้วมือ TCP handshake -- None เมื่อไม่ใช่ TCP หรือ option นั้นไม่ได้ส่งมาใน packet นี้
+    "tcp_window", "tcp_mss", "tcp_wscale", "tcp_sack_ok", "tcp_ts_present",
+    # v5 (feature H): ชนิด/ผลลัพธ์ DNS -- None สำหรับ packet ที่ไม่ใช่ DNS
+    "dns_qtype", "dns_rcode",
+    # v5 (feature I): ปลายทาง TLS ClientHello ตรงกับโดเมนที่รู้จักหรือไม่ (1/0) -- None เมื่อไม่ใช่ TLS ClientHello
+    "tls_sni_known",
 ]
 
 TCP_FLAG_BITS = (
@@ -69,6 +87,9 @@ FEATURE_NAMES = [
     # v4 (A-F)
     "ctx_same_endpoint", "ctx_bytes", "ctx_half_open", "ctx_beacon_cv",
     "dns_qlen", "ctx_dns_qrate", "ctx_resp_ports",
+    # v5 (G-I)
+    "tcp_window", "tcp_mss", "tcp_wscale", "tcp_sack_ok", "tcp_ts_present",
+    "dns_qtype", "dns_rcode", "tls_sni_known",
 ]
 N_FEATURES = len(FEATURE_NAMES)
 
@@ -117,6 +138,23 @@ def packet_features(meta: dict) -> list[float]:
         1.0 if bucket == 1 else 0.0,
         1.0 if bucket == 2 else 0.0,
         1.0 if bucket == 3 else 0.0,
+    ]
+
+
+def header_detail_features(meta: dict) -> list[float]:
+    """feature v5 (G-I) ต่อ packet (ไม่ต้องใช้ state) -- แยกจาก packet_features() เดิมเพื่อให้ชัดว่าเป็นกลุ่มที่
+    เพิ่มทีหลัง ต่อท้ายใน FEATURE_NAMES เสมอ (ห้ามแทรกกลาง ไม่งั้น index จะเพี้ยนกับกลุ่ม ctx_* ที่ตามมา)
+    ไม่ได้ส่งมาใน packet นี้ (None) ถือว่าเหมือน "ไม่ตั้งค่า" (0) เพราะเครื่องมือสแกน/สคริปต์มักไม่ตั้ง option
+    พวกนี้ให้ครบเหมือน stack จริงอยู่แล้ว"""
+    return [
+        float(_num(meta.get("tcp_window"), 0)),
+        float(_num(meta.get("tcp_mss"), 0)),
+        float(_num(meta.get("tcp_wscale"), 0)),
+        float(_num(meta.get("tcp_sack_ok"), 0)),
+        float(_num(meta.get("tcp_ts_present"), 0)),
+        float(_num(meta.get("dns_qtype"), 0)),
+        float(_num(meta.get("dns_rcode"), 0)),
+        float(_num(meta.get("tls_sni_known"), 0)),
     ]
 
 
@@ -399,7 +437,8 @@ class FeatureExtractor:
                 + [float(pkts), float(ports), float(ips), float(low), ips / pkts]
                 + unans
                 + [float(same_endpoint), float(bytes_sum), float(half_open), float(beacon_cv),
-                   dns_qlen, float(dns_qrate), float(resp_low)])
+                   dns_qlen, float(dns_qrate), float(resp_low)]
+                + header_detail_features(meta))
 
     def extract_many(self, metas) -> np.ndarray:
         rows = [self.extract(m) for m in metas]

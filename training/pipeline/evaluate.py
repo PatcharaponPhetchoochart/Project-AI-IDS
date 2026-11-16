@@ -13,8 +13,8 @@ import numpy as np
 from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 
 from shared.features import FeatureExtractor
-from training.common import is_ping_scenario, make_scenarios
-from training.generate_data import generate
+from training.pipeline.generate_data import generate
+from training.pipeline.scenarios import is_ping_scenario, make_scenarios
 
 NORMAL = "normal"
 

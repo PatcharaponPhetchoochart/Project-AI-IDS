@@ -4,9 +4,9 @@
 ใช้ฟังก์ชัน packet_to_meta ตัวเดียวกับ capture-service -> ข้อมูลที่ได้ตรงกับตอนดักสดทุกประการ
 
 รัน:
-  python training/pcap_to_csv.py data/raw/Monday-WorkingHours.pcap -o data/cic_monday.csv
-  python training/pcap_to_csv.py a.pcap b.pcapng -o data/mix.csv --max-packets 2000000
-  python training/pcap_to_csv.py Friday-WorkingHours.pcap -o data/cic_friday_scan.csv \
+  python training/pipeline/pcap_to_csv.py data/raw/Monday-WorkingHours.pcap -o data/cic_monday.csv
+  python training/pipeline/pcap_to_csv.py a.pcap b.pcapng -o data/mix.csv --max-packets 2000000
+  python training/pipeline/pcap_to_csv.py Friday-WorkingHours.pcap -o data/cic_friday_scan.csv \
       --start 2017-07-07T13:50:00-03:00 --end 2017-07-07T15:35:00-03:00   # อ่านเฉพาะช่วงเวลา
 แล้วเทรน:
   python training/train.py --source data/normal_packets.csv data/cic_monday.csv
@@ -21,7 +21,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "system"))  # shared/, services/ อยู่ใน system/
 
@@ -128,6 +128,11 @@ def convert(pcaps: list[Path], out: Path, iface: str = "pcap", max_packets: int 
     from scapy.config import conf
     from scapy.layers.inet import ICMP, IP, TCP, UDP
     from scapy.layers.l2 import Ether
+    # import ไว้ก่อน conf.layers.filter() เสมอ -- packet_to_meta() import scapy.layers.dns แบบ lazy
+    # (แค่ตอนเจอ packet UDP:53) ถ้า filter() ทำงานไปก่อน แล้วค่อย import ทีหลัง scapy จะลงทะเบียน class
+    # ใหม่ (เช่น DNSCompressedPacket ที่ใช้ตอนเจอ DNS response แบบมี name compression) เข้า conf.layers
+    # หลัง filter() ถ่าย snapshot ไปแล้ว -> ตอน unfilter() หา backup ของ class นั้นไม่เจอ (KeyError)
+    from scapy.layers.dns import DNS
 
     from services.capture_service.main import packet_to_meta
 
@@ -135,8 +140,9 @@ def convert(pcaps: list[Path], out: Path, iface: str = "pcap", max_packets: int 
     if start_ts is not None or end_ts is not None:
         print(f"เอาเฉพาะช่วงเวลา {_fmt_ts(start_ts)} -> {_fmt_ts(end_ts)}")
 
-    # ให้ Scapy แยกแค่ layer ที่ใช้ -> เร็วขึ้นหลายเท่าสำหรับไฟล์ใหญ่
-    conf.layers.filter([Ether, IP, TCP, UDP, ICMP])
+    # ให้ Scapy แยกแค่ layer ที่ใช้ -> เร็วขึ้นหลายเท่าสำหรับไฟล์ใหญ่ -- ต้องใส่ DNS ด้วย ไม่งั้น UDP:53
+    # จะไม่ถูกแยกเป็น DNS เลย (pkt.getlayer(DNS) ได้ None ตลอด -> dns_qlen/dns_qtype/dns_rcode ว่างหมด)
+    conf.layers.filter([Ether, IP, TCP, UDP, ICMP, DNS])
     stats = {"read": 0, "written": 0, "skipped_non_ipv4": 0, "skipped_time": 0, "errors": 0,
              "first_ts": None, "min_written_ts": None, "max_written_ts": None, "stopped_early": False}
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -2,9 +2,10 @@
 import numpy as np
 import pytest
 
-from training.common import (SCAN_DETECT_WITHIN, anomaly_scores, build_features, is_scan_scenario,
-                             make_scenarios, ping_request_scores, recommend_threshold, scan_report, train_model)
-from training.generate_data import generate
+from training.pipeline.common import anomaly_scores, build_features, recommend_threshold, train_model
+from training.pipeline.generate_data import generate
+from training.pipeline.scenarios import (SCAN_DETECT_WITHIN, is_scan_scenario, make_scenarios,
+                                         ping_request_scores, scan_report)
 
 
 @pytest.fixture(scope="module")

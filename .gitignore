@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 data/alerts.db
+data/alerts.db-journal
 data/captured_packets.csv
 data/score_plot.png
 
@@ -21,3 +22,5 @@ data/normal_features.csv
 data/home_*.csv
 data/soak_*.csv
 data/captured_*.csv
+# .pcap เต็ม (capture.save_pcap: true, v5) ใหญ่กว่า CSV มาก ไม่เคยถูกกันไว้มาก่อน
+data/captured_*.pcap

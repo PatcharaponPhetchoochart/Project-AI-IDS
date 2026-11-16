@@ -3,8 +3,8 @@
 ใช้แยกข้อมูลที่บันทึกจาก capture (capture.mode: csv|both) เป็นชุดเทรน/ชุดทดสอบ โดยไม่ให้ช่วงเวลาซ้อนกัน
 
 ตัวอย่าง:
-  python training/split_by_time.py data/soak_active1.csv 2026-11-13T01:58:00+07:00
-  python training/split_by_time.py data/soak_night1.csv  2026-11-13T05:18:00+07:00
+  python training/pipeline/split_by_time.py data/soak_active1.csv 2026-11-13T01:58:00+07:00
+  python training/pipeline/split_by_time.py data/soak_night1.csv  2026-11-13T05:18:00+07:00
 """
 import argparse
 import csv

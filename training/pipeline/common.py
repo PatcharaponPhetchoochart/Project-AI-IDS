@@ -1,4 +1,5 @@
-"""ฟังก์ชันที่ใช้ร่วมกันระหว่าง train.py และ train.ipynb (ไม่พึ่ง pandas)"""
+"""การเทรนจริง (feature -> fit -> threshold -> save) ใช้ร่วมกันระหว่าง train.py และ train.ipynb (ไม่พึ่ง pandas)
+ชุดทดสอบจำลอง (ping/nmap) ที่ run_training() เรียกไว้รายงานผลเท่านั้น อยู่แยกที่ scenarios.py"""
 from __future__ import annotations
 
 import json
@@ -6,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 for _p in (ROOT, ROOT / "system"):          # shared/, services/ อยู่ใน system/
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -18,7 +19,7 @@ from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 from shared.config import load_config, resolve_path  # noqa: E402
 from shared.features import FEATURE_NAMES, FEATURE_VERSION, FeatureExtractor  # noqa: E402
-from training.generate_data import generate, load_packets_csv  # noqa: E402
+from training.pipeline.generate_data import generate, load_packets_csv  # noqa: E402
 
 
 def build_features(packets: list[dict], window_sec: float = 5.0) -> np.ndarray:
@@ -42,106 +43,6 @@ def train_model(X: np.ndarray, n_estimators: int = 200, seed: int = 42):
 def anomaly_scores(model, scaler, X: np.ndarray) -> np.ndarray:
     """anomaly score: ยิ่งสูงยิ่งแปลก (= -score_samples ช่วงประมาณ 0.3-0.8)"""
     return -model.score_samples(scaler.transform(X))
-
-
-# ---------------------------------------------------------------- packet จำลองสำหรับทดสอบ
-def _icmp(ts, src, dst, typ, ttl, length, iface):
-    return {"ts": ts, "iface": iface, "src_ip": src, "dst_ip": dst, "src_port": None, "dst_port": None,
-            "proto": "ICMP", "length": length, "ttl": ttl, "tcp_flags": None, "icmp_type": typ, "icmp_code": 0}
-
-
-def _ping_sequence(src, dst, ttl_req, ttl_rep, length, iface, count=4, interval=1.0, t0=1_800_000_000.0):
-    pkts = []
-    for i in range(count):
-        t = t0 + i * interval
-        pkts.append(_icmp(t, src, dst, 8, ttl_req, length, iface))          # echo request
-        pkts.append(_icmp(t + 0.001, dst, src, 0, ttl_rep, length, iface))  # echo reply
-    return pkts
-
-
-def _tcp(ts, src, dst, sport, dport, flags, length=44, ttl=64, iface="eth0"):
-    return {"ts": ts, "iface": iface, "src_ip": src, "dst_ip": dst, "src_port": sport, "dst_port": dport,
-            "proto": "TCP", "length": length, "ttl": ttl, "tcp_flags": flags, "icmp_type": None, "icmp_code": None}
-
-
-def _udp(ts, src, dst, sport, dport, length=28, ttl=64, iface="eth0"):
-    return {"ts": ts, "iface": iface, "src_ip": src, "dst_ip": dst, "src_port": sport, "dst_port": dport,
-            "proto": "UDP", "length": length, "ttl": ttl, "tcp_flags": None, "icmp_type": None, "icmp_code": None}
-
-
-def make_scenarios() -> dict[str, list[dict]]:
-    """ชุด packet จำลอง (แต่ละชุดคำนวณ feature แยกกัน): ping รูปแบบต่างๆ + nmap หลายแบบ
-    ขนาด/flag/TTL อิงพฤติกรรมของ nmap จริง: SYN scan = 44 byte, port เรียงสุ่ม, src port คงที่"""
-    rng = np.random.default_rng(123)
-    me, atk = "192.168.1.50", "192.168.1.99"
-    t0 = 1_800_000_000.0
-    top_ports = [int(x) for x in rng.choice(np.arange(1, 10001), size=1000, replace=False)]
-
-    syn100 = [_tcp(t0 + i * 0.02, atk, me, 40000, p, 0x02) for i, p in enumerate(top_ports[:100])]
-    syn1000 = [_tcp(t0 + i * 0.002, atk, me, 40000, p, 0x02, ttl=int(rng.integers(37, 65)))
-               for i, p in enumerate(top_ports)]
-    connect = [_tcp(t0 + i * 0.01, atk, me, 50000 + i, p, 0x02, length=60) for i, p in enumerate(top_ports[:200])]
-    udp = [_udp(t0 + i * 0.02, atk, me, 50000, p) for i, p in enumerate(top_ports[:100])]
-    sweep_ping = []        # nmap -sn: ต่อ host ส่ง echo + SYN 443 + ACK 80 + timestamp request
-    for i in range(1, 101):
-        dst, t = f"192.168.1.{i}", t0 + i * 0.03
-        sweep_ping += [_icmp(t, atk, dst, 8, 64, 28, "eth0"), _tcp(t + 0.001, atk, dst, 51000, 443, 0x02),
-                       _tcp(t + 0.002, atk, dst, 51000, 80, 0x10), _icmp(t + 0.003, atk, dst, 13, 64, 40, "eth0")]
-    sweep_syn = [_tcp(t0 + i * 0.01, atk, f"192.168.1.{i}", 40000, 22, 0x02) for i in range(1, 101)]
-    return {
-        "ping ตัวเอง (loopback, Windows)": _ping_sequence(me, me, 128, 128, 60, "lo"),
-        "ping จากเครื่อง Windows": _ping_sequence("192.168.1.31", me, 128, 128, 60, "eth0"),
-        "ping จากเครื่อง Linux/Mac": _ping_sequence("192.168.1.32", me, 64, 64, 84, "eth0"),
-        "ping รัว (flood เล็กน้อย)": _ping_sequence("192.168.1.33", me, 64, 64, 84, "eth0", count=30, interval=0.1),
-        "nmap -sS 100 port": syn100,
-        "nmap -sS 1000 port": syn1000,
-        "nmap -sT (connect) 200 port": connect,
-        "nmap -sU (UDP) 100 port": udp,
-        "nmap -sS ไล่ host (port 22 x100)": sweep_syn,
-        "nmap -sn ไล่ host (ping sweep)": sweep_ping,
-    }
-
-
-def is_ping_scenario(name: str) -> bool:
-    return name.startswith("ping")
-
-
-def is_scan_scenario(name: str) -> bool:
-    return name.startswith("nmap")
-
-
-# การสแกนต้องถูกจับได้ภายในกี่ packet แรก (nmap ยิงราว 50-500 packet/วินาที = ภายในประมาณ 1 วินาที)
-SCAN_DETECT_WITHIN = 40
-
-
-def scan_report(scenarios: dict[str, np.ndarray], thr: float) -> dict[str, dict]:
-    """ต่อ scenario ของ nmap: packet แรกที่เกิน threshold คือตัวที่เท่าไร และกี่ % ของทั้งชุดที่ถูกจับ"""
-    out = {}
-    for name, sc in scenarios.items():
-        if not is_scan_scenario(name):
-            continue
-        hit = np.nonzero(sc >= thr)[0]
-        first = int(hit[0]) + 1 if len(hit) else None
-        out[name] = {"first": first, "rate": float(np.mean(sc >= thr)),
-                     "ok": first is not None and first <= SCAN_DETECT_WITHIN}
-    return out
-
-
-def score_scenarios(model, scaler, window_sec: float = 5.0) -> dict[str, np.ndarray]:
-    return {name: anomaly_scores(model, scaler, build_features(pkts, window_sec))
-            for name, pkts in make_scenarios().items()}
-
-
-def ping_request_scores(model, scaler, window_sec: float = 5.0) -> np.ndarray:
-    """score ของ ICMP echo request (ping ขาเข้า) ใน scenario ping จำลอง
-    feature คำนวณจากทั้งลำดับ (รวม echo reply) แต่เลือกเฉพาะ request: reply เป็นแค่สิ่งที่เครื่องเราตอบกลับ
-    ตัวที่ต้องแจ้งเตือนคือ request ที่อีกฝั่งยิงเข้ามา (alert-service แจ้ง "ICMP echo request (ping)")"""
-    out = []
-    for name, pkts in make_scenarios().items():
-        if is_ping_scenario(name):
-            s = anomaly_scores(model, scaler, build_features(pkts, window_sec))
-            out.append(s[np.array([p.get("icmp_type") == 8 for p in pkts])])
-    return np.concatenate(out)
 
 
 def recommend_threshold(normal_scores: np.ndarray, ping_scores: np.ndarray, quantile: float = 0.998,
@@ -181,7 +82,7 @@ def run_training(cfg: dict | None = None, packets_csv=None, verbose: bool = True
     paths = [Path(p) for p in packets_csv]
     for path in paths:
         if not path.exists():
-            raise FileNotFoundError(f"ไม่พบ {path} — รัน python training/generate_data.py ก่อน (หรือบันทึกด้วย capture mode csv)")
+            raise FileNotFoundError(f"ไม่พบ {path} — รัน python training/pipeline/generate_data.py ก่อน (หรือบันทึกด้วย capture mode csv)")
     packets, blocks, dropped = [], [], 0
     for path in paths:
         pk = load_packets_csv(path)
@@ -196,6 +97,10 @@ def run_training(cfg: dict | None = None, packets_csv=None, verbose: bool = True
     if verbose and dropped:
         print(f"ตัด ICMP echo (ping) ออกจากข้อมูลเทรน {dropped} packets")
     scaler, model = train_model(X, tcfg["n_estimators"], tcfg["seed"])
+
+    # แยกไว้ใน scenarios.py (ไม่ใช่ส่วนของการเทรน แค่ใช้ตรวจผลหลังเทรนเสร็จ) -- import ในฟังก์ชันกันปัญหา
+    # circular import (scenarios.py เองก็ import anomaly_scores/build_features มาจากไฟล์นี้)
+    from training.pipeline.scenarios import ping_request_scores, scan_report, score_scenarios
 
     # ชุดปกติที่ model ไม่เคยเห็น (seed ต่างกัน) ไว้ประเมิน false positive
     holdout = generate(4000, tcfg["seed"] + 1)
@@ -251,20 +156,60 @@ def save_model(res: dict, cfg: dict | None = None) -> dict[str, Path]:
     return save_artifacts(res["model"], res["scaler"], res["threshold"], len(res["X"]), res["source"], cfg, extra)
 
 
-def print_report(res: dict) -> None:
-    print(f"ข้อมูลเทรน: {len(res['X'])} packets จาก {res['source']}")
+def format_report(res: dict) -> str:
+    """ข้อความรายงานผลเทรน (ใช้ร่วมกันทั้ง print ขึ้นจอ และบันทึกลงไฟล์ใน save_report())"""
+    lines = [f"# ผลการเทรน {time.strftime('%Y-%m-%d %H:%M:%S')}", "",
+             f"ข้อมูลเทรน: {len(res['X'])} packets จาก {res['source']}"]
     q = np.quantile(res["s_hold_non_icmp"], [0.5, 0.99, 0.998, 1.0])
-    print(f"score ของ traffic ปกติ ไม่นับ ICMP (hold-out): median={q[0]:.3f}  p99={q[1]:.3f}  p99.8={q[2]:.3f}  max={q[3]:.3f}")
+    lines.append(f"score ของ traffic ปกติ ไม่นับ ICMP (hold-out): median={q[0]:.3f}  p99={q[1]:.3f}  "
+                 f"p99.8={q[2]:.3f}  max={q[3]:.3f}")
     for name, sc in res["scenarios"].items():
         extra = ""
         if name in res["scan_report"]:
             r = res["scan_report"][name]
             extra = f"  จับ packet แรกที่ตัวที่ {r['first']}" if r["first"] else "  จับไม่ได้เลย"
             extra += "  [ผ่าน]" if r["ok"] else "  [ไม่ผ่าน]"
-        print(f"  {name:<34} min={sc.min():.3f}  max={sc.max():.3f}  จับได้ {np.mean(sc >= res['threshold']) * 100:3.0f}%{extra}")
-    print(f"threshold แนะนำ = {res['threshold']:.4f}  | {res['note']}")
-    print(f"false positive (hold-out ปกติ ไม่นับ ICMP) = {res['fp_rate_holdout'] * 100:.2f}%  |  ping จับได้ {res['ping_detect_rate'] * 100:.0f}%")
-    print(f"ICMP error ที่ปนอยู่ในข้อมูลปกติ ถูกมองว่าแปลก {res['icmp_err_flag_rate'] * 100:.0f}% (ยอมรับได้: ICMP หายากในบ้านอยู่แล้ว)")
+        lines.append(f"  {name:<34} min={sc.min():.3f}  max={sc.max():.3f}  "
+                     f"จับได้ {np.mean(sc >= res['threshold']) * 100:3.0f}%{extra}")
+    lines.append(f"threshold แนะนำ = {res['threshold']:.4f}  | {res['note']}")
+    lines.append(f"false positive (hold-out ปกติ ไม่นับ ICMP) = {res['fp_rate_holdout'] * 100:.2f}%  "
+                 f"|  ping จับได้ {res['ping_detect_rate'] * 100:.0f}%")
+    lines.append(f"ICMP error ที่ปนอยู่ในข้อมูลปกติ ถูกมองว่าแปลก {res['icmp_err_flag_rate'] * 100:.0f}% "
+                 f"(ยอมรับได้: ICMP หายากในบ้านอยู่แล้ว)")
+    return "\n".join(lines)
+
+
+def print_report(res: dict) -> None:
+    print(format_report(res))
+
+
+def save_report(res: dict, run_dir: Path | None = None) -> Path:
+    """บันทึกผลเทรนรอบนี้ลง results/train_<เวลา>/ (report.md + metrics.json) ให้ train.py มี record
+    ถาวรเหมือน train.ipynb (ที่เก็บไว้ในเซลล์ notebook เอง ไม่ได้ใช้ฟังก์ชันนี้) แทนที่จะ print ขึ้นจอแล้วหาย"""
+    run_dir = run_dir or resolve_path("results") / time.strftime("train_%Y%m%d_%H%M%S")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "report.md").write_text(format_report(res), encoding="utf-8")
+    metrics = {
+        "trained_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "source": res["source"],
+        "n_samples": len(res["X"]),
+        "threshold": round(float(res["threshold"]), 5),
+        "threshold_note": res["note"],
+        "fp_rate_holdout": round(res["fp_rate_holdout"], 5),
+        "ping_detect_rate": round(res["ping_detect_rate"], 5),
+        "icmp_err_flag_rate": round(res["icmp_err_flag_rate"], 5),
+        "scenarios": {
+            name: {
+                "min": round(float(sc.min()), 5), "max": round(float(sc.max()), 5),
+                "detect_rate": round(float(np.mean(sc >= res["threshold"])), 5),
+                **({"scan_first_hit": res["scan_report"][name]["first"],
+                    "scan_pass": res["scan_report"][name]["ok"]} if name in res["scan_report"] else {}),
+            }
+            for name, sc in res["scenarios"].items()
+        },
+    }
+    (run_dir / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    return run_dir
 
 
 def plot_scores(res: dict, out: str | Path | None = None, show: bool = False):
@@ -273,6 +218,11 @@ def plot_scores(res: dict, out: str | Path | None = None, show: bool = False):
     if not show:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib import font_manager
+
+    _fonts = {f.name for f in font_manager.fontManager.ttflist}   # ใช้ฟอนต์ไทยเท่าที่มีในเครื่อง กัน legend เป็นกล่องว่าง
+    plt.rcParams["font.family"] = [f for f in ("Tahoma", "Leelawadee UI", "Noto Sans Thai", "Loma")
+                                    if f in _fonts] or ["DejaVu Sans"]
 
     fig, ax = plt.subplots(figsize=(10, 4.5))
     ax.hist(res["s_hold"], bins=60, color="tab:gray", alpha=0.8, label="ปกติ (hold-out)")

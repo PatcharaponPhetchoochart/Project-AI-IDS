@@ -20,7 +20,7 @@ capture:
   interfaces:
     - "default"
     - "loopback"
-  mode: zmq
+  mode: both
   csv_path: "data/captured_packets.csv"
   ignore_loopback_tcp: true
   extra_bpf: ""
@@ -35,8 +35,10 @@ detection:
   meta_path: "system/models/meta.json"
   threshold: auto
   batch_size: 256
-  # false เพราะเป้าหมายของ Docker lab นี้คือทดสอบ scan/flood/brute-force/C2 ฯลฯ ไม่ใช่แค่ ping
-  ping_only: false
+  # true ชั่วคราว: ตัดเสียงรบกวนจาก traffic ภายในของ Docker Desktop เอง (192.168.65.x คุยกันเอง)
+  # ที่ไม่เคยหยุดและถูกมองว่าแปลกเกือบทุก packet (โมเดลไม่เคยเห็น pattern นี้ตอนเทรน)
+  # ไว้ทดสอบ scan/flood/brute-force/C2 แล้วค่อยปรับกลับเป็น false (ดูหมายเหตุใน DOCKER.md)
+  ping_only: true
 
 alert:
   cooldown_sec: 10

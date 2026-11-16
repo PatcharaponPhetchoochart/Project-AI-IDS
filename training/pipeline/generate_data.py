@@ -8,7 +8,7 @@
   data/normal_packets.csv   metadata ดิบ (คอลัมน์เดียวกับที่ capture-service โหมด csv บันทึก)
   data/normal_features.csv  feature ที่คำนวณผ่าน shared/features.py
 
-รัน:  python training/generate_data.py [--n 8000] [--seed 42]
+รัน:  python training/pipeline/generate_data.py [--n 8000] [--seed 42]
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import csv
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "system"))  # shared/, services/ อยู่ใน system/
 
@@ -29,15 +29,19 @@ from shared.utils import force_utf8  # noqa: E402
 from collections import Counter  # noqa: E402
 
 GATEWAY = "192.168.1.1"
-# เครื่องในบ้าน: (ip, ttl เริ่มต้น, ช่วง ephemeral port ของ OS)
+# เครื่องในบ้าน: (ip, ttl เริ่มต้น, ช่วง ephemeral port ของ OS, TCP fingerprint (mss, wscale, sack_ok, ts_present))
+# fingerprint จำลองตาม stack จริงของแต่ละ OS (v5 feature G) -- ค่าไม่ตรง 100% กับของจริงทุกเวอร์ชัน แต่
+# สำคัญที่ "ไม่คงที่เป็น 0 เหมือนเดิม" ไม่งั้นโมเดลจะมองว่า traffic จริงที่มีค่าพวกนี้เป็นเรื่องแปลกไปหมด
 LAN_CLIENTS = [
-    ("192.168.1.10", 128, (49152, 65535)),   # Windows
-    ("192.168.1.11", 128, (49152, 65535)),   # Windows
-    ("192.168.1.12", 64, (32768, 60999)),    # Linux / Android
-    ("192.168.1.15", 64, (49152, 65535)),    # macOS / iOS
-    ("192.168.1.20", 64, (49152, 65535)),    # มือถือ
-    ("192.168.1.23", 64, (32768, 60999)),    # IoT / TV
+    ("192.168.1.10", 128, (49152, 65535), (1460, 8, 1, 0)),   # Windows (timestamps ปิดโดย default)
+    ("192.168.1.11", 128, (49152, 65535), (1460, 8, 1, 0)),   # Windows
+    ("192.168.1.12", 64, (32768, 60999), (1460, 7, 1, 1)),    # Linux / Android
+    ("192.168.1.15", 64, (49152, 65535), (1460, 6, 1, 1)),    # macOS / iOS
+    ("192.168.1.20", 64, (49152, 65535), (1420, 6, 1, 1)),    # มือถือ
+    ("192.168.1.23", 64, (32768, 60999), (1380, 0, 0, 0)),    # IoT / TV (stack ง่ายๆ ไม่มี option พวกนี้)
 ]
+# server/CDN ส่วนใหญ่ที่เจอจริงรัน Linux -- ใช้ fingerprint เดียวกันหมดเพื่อความง่าย (ไม่ใช่จุดสำคัญของ feature นี้)
+SERVER_TCP_FP = (1460, 9, 1, 1)
 IFACE = "eth0"
 
 
@@ -58,12 +62,16 @@ class Gen:
 
     # ---------- ตัวช่วย ----------
     def add(self, ts, src, dst, sport, dport, proto, length, ttl, flags=None, itype=None, icode=None,
-            dns_qlen=None):
+            dns_qlen=None, tcp_window=None, tcp_mss=None, tcp_wscale=None, tcp_sack_ok=None,
+            tcp_ts_present=None, dns_qtype=None, dns_rcode=None, tls_sni_known=None):
         self.pkts.append({
             "ts": float(ts), "iface": IFACE, "src_ip": src, "dst_ip": dst,
             "src_port": sport, "dst_port": dport, "proto": proto, "length": int(length),
             "ttl": int(ttl), "tcp_flags": flags, "icmp_type": itype, "icmp_code": icode,
             "dns_qlen": dns_qlen,
+            "tcp_window": tcp_window, "tcp_mss": tcp_mss, "tcp_wscale": tcp_wscale,
+            "tcp_sack_ok": tcp_sack_ok, "tcp_ts_present": tcp_ts_present,
+            "dns_qtype": dns_qtype, "dns_rcode": dns_rcode, "tls_sni_known": tls_sni_known,
         })
 
     def client(self):
@@ -78,51 +86,74 @@ class Gen:
     def gap(self, mean=0.004):
         return float(self.rng.exponential(mean))
 
+    def tcp_window_for(self, is_client: bool) -> int:
+        """ค่า window ที่ stack จริงมักโฆษณา (v5 feature G) -- ไม่ต้องแม่นยำ 100% แค่ไม่คงที่/ไม่เป็น 0"""
+        choices = [64240, 65535, 29200, 8192] if is_client else [65160, 29200, 14480, 5840]
+        return int(self.rng.choice(choices))
+
     # ---------- TCP session (HTTPS / HTTP / อื่นๆ) ----------
     def tcp_session(self, t0, client, server, dport, n_exchanges=None):
-        cip, cttl, cports = client
+        cip, cttl, cports, cfp = client
+        cmss, cwscale, csack, cts = cfp
+        smss, swscale, ssack, sts = SERVER_TCP_FP
+        ts_negotiated = 1 if (cts and sts) else 0     # timestamp ใช้จริงต่อเมื่อ "ทั้งสองฝั่ง" รองรับ
         sip, sbase, hops = server
         sttl = sbase - hops                       # TTL ของ server ที่เห็นที่ฝั่งเรา
         sport = self.eph(cports)
         rng = self.rng
         t = t0
         syn_len = int(rng.choice([52, 60, 64], p=[0.5, 0.35, 0.15]))
-        # three-way handshake
-        self.add(t, cip, sip, sport, dport, "TCP", syn_len, cttl, 0x02)
+        # three-way handshake -- option (MSS/WScale/SAckOK) มีแค่ตอน SYN/SYN-ACK เท่านั้นตามสเปค TCP จริง
+        self.add(t, cip, sip, sport, dport, "TCP", syn_len, cttl, 0x02,
+                 tcp_window=self.tcp_window_for(True), tcp_mss=cmss, tcp_wscale=cwscale,
+                 tcp_sack_ok=csack, tcp_ts_present=cts)
         t += float(rng.uniform(0.008, 0.06))
-        self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([52, 60])), sttl, 0x12)
+        self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([52, 60])), sttl, 0x12,
+                 tcp_window=self.tcp_window_for(False), tcp_mss=smss, tcp_wscale=swscale,
+                 tcp_sack_ok=ssack, tcp_ts_present=sts)
         t += self.gap(0.001)
-        self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x10)
+        self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x10,
+                 tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated)
 
         n_ex = n_exchanges if n_exchanges is not None else int(rng.integers(1, 5))
-        for _ in range(n_ex):
+        for ex_i in range(n_ex):
             t += float(rng.exponential(0.15)) + 0.002
-            # client ส่ง request (ClientHello / HTTP GET / ข้อมูลใน TLS)
+            # client ส่ง request (ClientHello / HTTP GET / ข้อมูลใน TLS) -- ClientHello (ถ้าเป็น TLS) มาแค่ครั้ง
+            # แรกของ connection เท่านั้น ครั้งถัดไปเป็น application data ที่เข้ารหัสแล้ว (ไม่มี SNI ให้อ่าน)
             req_len = int(np.clip(rng.lognormal(5.6, 0.7), 60, 1500))
-            self.add(t, cip, sip, sport, dport, "TCP", req_len, cttl, 0x18)
+            sni_known = None if dport != 443 else (0 if ex_i > 0 else (1 if rng.random() < 0.9 else 0))
+            self.add(t, cip, sip, sport, dport, "TCP", req_len, cttl, 0x18,
+                     tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated, tls_sni_known=sni_known)
             t += float(rng.uniform(0.01, 0.08))
-            self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([40, 52])), sttl, 0x10)
+            self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([40, 52])), sttl, 0x10,
+                     tcp_window=self.tcp_window_for(False), tcp_ts_present=ts_negotiated)
             # server ตอบกลับเป็นหลาย segment (ส่วนใหญ่เต็ม MTU)
             n_seg = int(min(rng.geometric(0.25), 25))
             for i in range(n_seg):
                 t += self.gap(0.0015)
                 last = i == n_seg - 1
                 ln = int(rng.integers(80, 1500)) if last else int(rng.choice([1500, 1492, 1448 + 52], p=[0.85, 0.1, 0.05]))
-                self.add(t, sip, cip, dport, sport, "TCP", ln, sttl, 0x18 if last or rng.random() < 0.3 else 0x10)
+                self.add(t, sip, cip, dport, sport, "TCP", ln, sttl, 0x18 if last or rng.random() < 0.3 else 0x10,
+                         tcp_window=self.tcp_window_for(False), tcp_ts_present=ts_negotiated)
                 if i % 2 == 1 or last:
                     self.add(t + self.gap(0.0008) + 0.0003, cip, sip, sport, dport, "TCP",
-                             int(rng.choice([40, 52])), cttl, 0x10)
+                             int(rng.choice([40, 52])), cttl, 0x10,
+                             tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated)
 
         # ปิด connection: ส่วนใหญ่ FIN ปกติ, บางครั้ง RST
         t += float(rng.exponential(0.1)) + 0.002
         if rng.random() < 0.04:
-            self.add(t, cip, sip, sport, dport, "TCP", 40, cttl, 0x14)
+            self.add(t, cip, sip, sport, dport, "TCP", 40, cttl, 0x14,
+                     tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated)
         else:
-            self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x11)
+            self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x11,
+                     tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated)
             t += float(rng.uniform(0.01, 0.05))
-            self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([40, 52])), sttl, 0x11)
+            self.add(t, sip, cip, dport, sport, "TCP", int(rng.choice([40, 52])), sttl, 0x11,
+                     tcp_window=self.tcp_window_for(False), tcp_ts_present=ts_negotiated)
             t += self.gap(0.001)
-            self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x10)
+            self.add(t, cip, sip, sport, dport, "TCP", int(rng.choice([40, 52])), cttl, 0x10,
+                     tcp_window=self.tcp_window_for(True), tcp_ts_present=ts_negotiated)
 
     def page_load(self, t0):
         """เปิดเว็บ 1 หน้า = หลาย connection ขนานกันไปหลาย server (เหมือน browser จริง)"""
@@ -134,22 +165,26 @@ class Gen:
 
     # ---------- UDP ----------
     def dns(self, t0):
-        cip, cttl, cports = self.client()
+        cip, cttl, cports, _ = self.client()
         sport = self.eph(cports)
-        self.add(t0, cip, GATEWAY, sport, 53, "UDP", int(self.rng.integers(58, 90)), cttl)
+        # qtype ส่วนใหญ่ A/AAAA ตามที่เบราว์เซอร์จริง query, rcode เกือบทั้งหมดสำเร็จ (NOERROR=0)
+        # นานๆ ครั้งจะ NXDOMAIN (3) จาก typo/domain ที่ไม่มีอยู่จริง -- v5 feature H
+        qtype = int(self.rng.choice([1, 28, 1, 1], p=[0.55, 0.3, 0.1, 0.05]))
+        rcode = 3 if self.rng.random() < 0.02 else 0
+        self.add(t0, cip, GATEWAY, sport, 53, "UDP", int(self.rng.integers(58, 90)), cttl, dns_qtype=qtype)
         self.add(t0 + float(self.rng.uniform(0.002, 0.04)), GATEWAY, cip, 53, sport, "UDP",
-                 int(self.rng.integers(76, 320)), 64)
+                 int(self.rng.integers(76, 320)), 64, dns_qtype=qtype, dns_rcode=rcode)
 
     def mdns(self, t0):
-        cip, _, _ = self.client()
+        cip, _, _, _ = self.client()
         self.add(t0, cip, "224.0.0.251", 5353, 5353, "UDP", int(self.rng.integers(70, 220)), 255)
 
     def ssdp(self, t0):
-        cip, _, cports = self.client()
+        cip, _, cports, _ = self.client()
         self.add(t0, cip, "239.255.255.250", self.eph(cports), 1900, "UDP", int(self.rng.integers(170, 400)), 4)
 
     def quic(self, t0):
-        cip, cttl, cports = self.client()
+        cip, cttl, cports, _ = self.client()
         sip, sbase, hops = self.server()
         sport = self.eph(cports)
         t = t0
@@ -162,7 +197,7 @@ class Gen:
             t += self.gap(0.003)
 
     def ntp(self, t0):
-        cip, cttl, cports = self.client()
+        cip, cttl, cports, _ = self.client()
         sip, sbase, hops = self.server()
         sport = self.eph(cports)
         self.add(t0, cip, sip, sport, 123, "UDP", 76, cttl)
@@ -170,7 +205,7 @@ class Gen:
 
     def udp_misc(self, t0):
         """UDP พอร์ตสูง (VPN / เกม / video call) เล็กน้อย"""
-        cip, cttl, cports = self.client()
+        cip, cttl, cports, _ = self.client()
         sip, sbase, hops = self.server()
         sport, dport = self.eph(cports), int(self.rng.integers(3478, 50000))
         t = t0
@@ -189,7 +224,7 @@ class Gen:
     def icmp_error(self, t0):
         """ICMP port unreachable (type 3) จากเกตเวย์ -- เจอน้อยมากใน traffic บ้านปกติ
         ต้องมีอย่างน้อยเล็กน้อย ไม่งั้นค่า proto_icmp/icmp_type จะคงที่ใน training แล้ว tree ไม่ใช้ feature นี้เลย"""
-        cip, cttl, _ = self.client()
+        cip, cttl, _, _ = self.client()
         self.add(t0, GATEWAY, cip, None, None, "ICMP", 576, 64, None, 3, 3)
 
 
@@ -231,7 +266,9 @@ def save_packets_csv(pkts: list[dict], path: Path) -> None:
 
 def load_packets_csv(path: Path) -> list[dict]:
     """อ่าน CSV metadata (ทั้งของ synthetic และที่ capture-service บันทึก) -> list[dict] พร้อมแปลงชนิดข้อมูล"""
-    int_cols = ("src_port", "dst_port", "length", "ttl", "tcp_flags", "icmp_type", "icmp_code", "dns_qlen")
+    int_cols = ("src_port", "dst_port", "length", "ttl", "tcp_flags", "icmp_type", "icmp_code", "dns_qlen",
+                "tcp_window", "tcp_mss", "tcp_wscale", "tcp_sack_ok", "tcp_ts_present",
+                "dns_qtype", "dns_rcode", "tls_sni_known")
     out = []
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):

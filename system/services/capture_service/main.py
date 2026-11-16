@@ -46,9 +46,68 @@ def resolve_interfaces(names: list[str], conf, log) -> list[tuple[str, object]]:
     return result
 
 
+# v5 (feature I): โดเมนของผู้ให้บริการ CDN/cloud ใหญ่ที่เจอบ่อยใน traffic บ้านปกติ (ไม่ใช่รายชื่อครบถ้วน
+# แค่พอให้โมเดลเห็นว่า "ปลายทางที่หนักๆ ซ้ำๆ" ส่วนใหญ่เป็นผู้ให้บริการที่รู้จัก ไม่ใช่สัญญาณ C2/exfiltration)
+KNOWN_GOOD_TLS_SUFFIXES = (
+    "google.com", "gstatic.com", "googleapis.com", "googleusercontent.com", "googlevideo.com", "doubleclick.net",
+    "cloudflare.com", "cloudflare-dns.com", "cloudflareinsights.com",
+    "akamai.net", "akamaiedge.net", "akamaitechnologies.com", "akamaihd.net",
+    "amazonaws.com", "cloudfront.net", "awsstatic.com",
+    "microsoft.com", "microsoftonline.com", "windows.net", "msedge.net", "live.com", "office.com", "office365.com",
+    "apple.com", "icloud.com", "mzstatic.com",
+    "anthropic.com", "claude.ai",
+    "fastly.net", "github.com", "githubusercontent.com",
+    "facebook.com", "fbcdn.net", "instagram.com", "whatsapp.net",
+)
+
+
+def is_known_good_domain(host: str) -> bool:
+    host = host.lower().rstrip(".")
+    return any(host == s or host.endswith("." + s) for s in KNOWN_GOOD_TLS_SUFFIXES)
+
+
+def extract_tls_sni(data: bytes) -> str | None:
+    """ดึงชื่อโดเมนจาก extension server_name ของ TLS ClientHello (RFC 8446 section 4.2.9 / RFC 6066)
+    ส่วนนี้ของ TLS handshake ไม่เข้ารหัส (ตัว ClientHello เองวิ่งเป็น plaintext) ต่างจาก application data
+    ที่มาทีหลัง -- เขียนแบบ parse มือ (ไม่พึ่ง scapy.layers.tls) เพราะต้องการแค่ field เดียว เร็วกว่า และกัน
+    exception ทุกจุดเพราะ ClientHello อาจถูกตัดครึ่งข้าม TCP segment ได้ (ไม่ต้องสมบูรณ์ 100% แค่ best-effort)"""
+    if len(data) < 9 or data[0] != 0x16 or data[5] != 0x01:   # 0x16=Handshake, 0x01=ClientHello
+        return None
+    pos = 9 + 2 + 32   # record header(5) + handshake header(4) + client_version(2) + random(32)
+    if pos >= len(data):
+        return None
+    pos += 1 + data[pos]                                       # session_id
+    if pos + 2 > len(data):
+        return None
+    pos += 2 + int.from_bytes(data[pos:pos + 2], "big")        # cipher_suites
+    if pos >= len(data):
+        return None
+    pos += 1 + data[pos]                                       # compression_methods
+    if pos + 2 > len(data):
+        return None
+    ext_end = pos + 2 + int.from_bytes(data[pos:pos + 2], "big")
+    pos += 2
+    while pos + 4 <= min(ext_end, len(data)):
+        ext_type = int.from_bytes(data[pos:pos + 2], "big")
+        ext_len = int.from_bytes(data[pos + 2:pos + 4], "big")
+        pos += 4
+        if ext_type == 0x0000:                                 # server_name
+            p = pos + 2                                        # ข้าม server_name_list length
+            if p + 3 > len(data):
+                return None
+            name_type, name_len = data[p], int.from_bytes(data[p + 1:p + 3], "big")
+            p += 3
+            if name_type == 0 and p + name_len <= len(data):   # 0 = host_name
+                return data[p:p + name_len].decode("ascii", "replace")
+            return None
+        pos += ext_len
+    return None
+
+
 def packet_to_meta(pkt, iface_label: str) -> dict | None:
     """แปลง Scapy packet เป็น metadata dict (เฉพาะ IPv4) — ไม่เก็บ payload
-    ยกเว้น DNS query name ที่เก็บแค่ "ความยาว" (dns_qlen, feature E) ไม่เก็บชื่อจริง เพื่อจับ DNS tunneling"""
+    ยกเว้น: DNS query name เก็บแค่ "ความยาว" (dns_qlen, feature E) ไม่เก็บชื่อจริง เพื่อจับ DNS tunneling
+            TLS ClientHello SNI เก็บแค่ "รู้จักหรือไม่" (tls_sni_known, feature I) ไม่เก็บชื่อโดเมนจริง"""
     from scapy.layers.inet import ICMP, IP, TCP, UDP
 
     ip = pkt.getlayer(IP)
@@ -64,10 +123,41 @@ def packet_to_meta(pkt, iface_label: str) -> dict | None:
         "ttl": int(ip.ttl),
         "tcp_flags": None, "icmp_type": None, "icmp_code": None,
         "dns_qlen": None,
+        "tcp_window": None, "tcp_mss": None, "tcp_wscale": None, "tcp_sack_ok": None, "tcp_ts_present": None,
+        "dns_qtype": None, "dns_rcode": None,
+        "tls_sni_known": None,
     }
     tcp, udp, icmp = pkt.getlayer(TCP), pkt.getlayer(UDP), pkt.getlayer(ICMP)
     if tcp is not None:
-        meta.update(proto="TCP", src_port=int(tcp.sport), dst_port=int(tcp.dport), tcp_flags=int(tcp.flags))
+        meta.update(proto="TCP", src_port=int(tcp.sport), dst_port=int(tcp.dport), tcp_flags=int(tcp.flags),
+                    tcp_window=int(tcp.window))
+        # v5 (feature G): option ส่วนใหญ่มีแค่ตอน SYN/SYN-ACK -- packet อื่นเลยมักได้ None/0 เป็นปกติ
+        try:
+            sack_ok = ts_present = 0
+            for opt in tcp.options:
+                name = opt[0]
+                if name == "MSS":
+                    meta["tcp_mss"] = int(opt[1])
+                elif name == "WScale":
+                    meta["tcp_wscale"] = int(opt[1])
+                elif name == "SAckOK":
+                    sack_ok = 1
+                elif name == "Timestamp":
+                    ts_present = 1
+            meta["tcp_sack_ok"] = sack_ok
+            meta["tcp_ts_present"] = ts_present
+        except Exception:  # noqa: BLE001  option พังไม่ควรทำให้ packet ทั้งตัวเสีย
+            pass
+        # v5 (feature I): เช็คเฉพาะ packet ที่ "น่าจะ" เป็น ClientHello (client -> 443, มี payload)
+        if tcp.dport == 443:
+            try:
+                payload = bytes(tcp.payload)
+                if payload:
+                    sni = extract_tls_sni(payload)
+                    if sni:
+                        meta["tls_sni_known"] = 1 if is_known_good_domain(sni) else 0
+            except Exception:  # noqa: BLE001
+                pass
     elif udp is not None:
         meta.update(proto="UDP", src_port=int(udp.sport), dst_port=int(udp.dport))
         if udp.dport == 53 or udp.sport == 53:
@@ -79,6 +169,9 @@ def packet_to_meta(pkt, iface_label: str) -> dict | None:
                     if isinstance(qname, bytes):
                         qname = qname.decode("utf-8", "replace")
                     meta["dns_qlen"] = len(str(qname).rstrip("."))
+                    meta["dns_qtype"] = int(dns.qd.qtype)      # v5 (feature H): ชนิด query (1=A, 28=AAAA, ...)
+                    if int(dns.qr) == 1:                        # เป็น response -> rcode มีความหมาย (query ไม่มี)
+                        meta["dns_rcode"] = int(dns.rcode)
             except Exception:  # noqa: BLE001  DNS parse พังไม่ควรทำให้ packet ทั้งตัวเสีย
                 pass
     elif icmp is not None:
@@ -130,6 +223,17 @@ def main() -> None:
             csv_writer.writeheader()
         log.info("writing packet metadata to CSV: %s", path)
 
+    # บันทึก packet เต็มๆ ลง .pcap ควบคู่กันไปด้วย (เปิดดูใน Wireshark ได้ตรงๆ, ย้อนกลับมาดึง field
+    # ใหม่ทีหลังได้โดยไม่ต้องดักซ้ำ) เป็นคนละเรื่องกับ CSV/mode ข้างบน -- เปิดพร้อมกันได้เสมอถ้า save_pcap: true
+    pcap_writer = None
+    if bool(ccfg.get("save_pcap", False)):
+        from scapy.utils import PcapWriter
+
+        pcap_path = resolve_path(ccfg.get("pcap_path", "data/captured_full.pcap"))
+        pcap_path.parent.mkdir(parents=True, exist_ok=True)
+        pcap_writer = PcapWriter(str(pcap_path), append=True, sync=False)
+        log.info("writing full packets to pcap: %s", pcap_path)
+
     lock = threading.Lock()
     counters = {"captured": 0, "skipped": 0}
     zmq_port_set = set(zmq_ports)
@@ -152,6 +256,8 @@ def main() -> None:
                         pub.send(meta)
                     if csv_writer is not None:
                         csv_writer.writerow(meta)
+                    if pcap_writer is not None:
+                        pcap_writer.write(pkt)
             except Exception as e:  # noqa: BLE001  packet เดียวพังต้องไม่ทำให้ทั้ง service ล้ม
                 log.debug("failed to parse packet: %s", e)
         return handle
@@ -179,6 +285,8 @@ def main() -> None:
             last = n
             if csv_file:
                 csv_file.flush()
+            if pcap_writer is not None:
+                pcap_writer.flush()
             dead = [lbl for lbl, s in sniffers if s.thread is not None and not s.thread.is_alive()]
             if dead:
                 log.error("sniffer stopped: %s", dead)
@@ -193,6 +301,8 @@ def main() -> None:
                 pass
         if csv_file:
             csv_file.close()
+        if pcap_writer is not None:
+            pcap_writer.close()
         if pub:
             pub.close()
         log.info("stopped")

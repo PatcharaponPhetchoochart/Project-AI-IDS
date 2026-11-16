@@ -24,8 +24,12 @@ capture:
     - "Wi-Fi"
     - "loopback"
   # โหมด: zmq = ส่งเข้าระบบ | csv = บันทึกลงไฟล์ไว้เทรนข้อมูลจริง | both = ทำทั้งคู่
-  mode: zmq
+  mode: both
   csv_path: "data/captured_packets.csv"
+  # บันทึก packet เต็มๆ ลง .pcap ควบคู่กันไปด้วย (เปิดดูใน Wireshark ได้ตรงๆ, ย้อนมาดึง field ใหม่
+  # ทีหลังได้โดยไม่ต้องดักซ้ำ) ไฟล์จะใหญ่กว่า CSV มาก เพราะเก็บทุก byte ไม่ใช่แค่ metadata ที่คัดแล้ว
+  save_pcap: true
+  pcap_path: "data/captured_full.pcap"
   # ข้าม TCP ที่ทั้งสองฝั่งเป็น 127.0.0.1 (เป็น traffic ภายในของ ZeroMQ บน Windows ถ้าดักจะเกิด feedback loop)
   # ICMP/UDP บน loopback และ TCP ที่ใช้ IP จริงของเครื่องยังดักตามปกติ
   ignore_loopback_tcp: true

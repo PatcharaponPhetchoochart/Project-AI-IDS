@@ -1,11 +1,11 @@
 """เทรน StandardScaler + Isolation Forest จาก CSV (ทำเหมือน train.ipynb แต่รันจาก command line)
 
 รัน:
-  python training/generate_data.py          # สร้างข้อมูลปกติ (synthetic)
+  python training/pipeline/generate_data.py # สร้างข้อมูลปกติ (synthetic)
   python training/train.py                  # เทรน -> system/models/
   python training/train.py --source data/captured_packets.csv   # เทรนจาก traffic จริงที่ capture บันทึกไว้
   python training/train.py --source data/normal_packets.csv data/captured_packets.csv   # รวม synthetic + ของจริง
-  python training/train.py --plot           # บันทึกกราฟ score ที่ data/score_plot.png
+  python training/train.py --plot           # บันทึกกราฟ score ไว้ในโฟลเดอร์ record เดียวกับ report
 """
 from __future__ import annotations
 
@@ -17,9 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "system"))  # shared/, services/ อยู่ใน system/
 
-from shared.config import load_config, resolve_path  # noqa: E402
+from shared.config import load_config  # noqa: E402
 from shared.utils import force_utf8  # noqa: E402
-from training.common import plot_scores, print_report, run_training, save_model  # noqa: E402
+from training.pipeline.common import plot_scores, print_report, run_training, save_model, save_report  # noqa: E402
 
 
 def main() -> None:
@@ -29,7 +29,7 @@ def main() -> None:
                     help="CSV metadata ที่จะเทรน ใส่ได้หลายไฟล์ (ค่าเริ่มต้น: training.packets_csv ใน config)")
     ap.add_argument("--keep-icmp-echo", action="store_true",
                     help="ไม่ตัด ping (ICMP echo) ออกจากข้อมูลเทรน (ค่าเริ่มต้น: ตัดออก เพื่อให้ ping ถูกมองว่าแปลก)")
-    ap.add_argument("--plot", action="store_true", help="บันทึกกราฟ score เป็น data/score_plot.png")
+    ap.add_argument("--plot", action="store_true", help="บันทึกกราฟ score ไว้ในโฟลเดอร์ record เดียวกับ report")
     args = ap.parse_args()
 
     cfg = load_config()
@@ -43,8 +43,11 @@ def main() -> None:
     print("บันทึกโมเดลแล้ว:")
     for p in paths.values():
         print("  ->", p)
+    # record ถาวรของรอบนี้ (เหมือนที่ train.ipynb ทำไว้ใน results/train_<เวลา>/) -- ไม่ทับของเดิม ทุกรอบได้โฟลเดอร์ใหม่
+    run_dir = save_report(res)
+    print("บันทึกรายงานที่:", run_dir)
     if args.plot:
-        out = resolve_path("data/score_plot.png")
+        out = run_dir / "score_plot.png"
         plot_scores(res, out)
         print("  -> กราฟ:", out)
 

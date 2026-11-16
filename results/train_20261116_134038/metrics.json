@@ -1,0 +1,74 @@
+{
+  "trained_at": "2026-11-16 13:40:38",
+  "source": "data\\normal_packets.csv, data\\captured_full_v5.csv",
+  "n_samples": 289027,
+  "threshold": 0.73346,
+  "threshold_note": "คำเตือน: ping บางตัวมี score ต่ำกว่า quantile ของ traffic ปกติ — ใช้ค่า quantile ของ traffic ปกติ (ping อาจหลุดบางตัว) ลองเพิ่มข้อมูล/ปรับ fp_quantile",
+  "fp_rate_holdout": 0.00201,
+  "ping_detect_rate": 0.0,
+  "icmp_err_flag_rate": 0.0,
+  "scenarios": {
+    "ping ตัวเอง (loopback, Windows)": {
+      "min": 0.53594,
+      "max": 0.60131,
+      "detect_rate": 0.0
+    },
+    "ping จากเครื่อง Windows": {
+      "min": 0.54656,
+      "max": 0.60131,
+      "detect_rate": 0.0
+    },
+    "ping จากเครื่อง Linux/Mac": {
+      "min": 0.55559,
+      "max": 0.6126,
+      "detect_rate": 0.0
+    },
+    "ping รัว (flood เล็กน้อย)": {
+      "min": 0.55559,
+      "max": 0.6126,
+      "detect_rate": 0.0
+    },
+    "nmap -sS 100 port": {
+      "min": 0.65675,
+      "max": 0.73394,
+      "detect_rate": 0.21,
+      "scan_first_hit": 77,
+      "scan_pass": false
+    },
+    "nmap -sS 1000 port": {
+      "min": 0.65745,
+      "max": 0.74629,
+      "detect_rate": 0.84,
+      "scan_first_hit": 45,
+      "scan_pass": false
+    },
+    "nmap -sT (connect) 200 port": {
+      "min": 0.65761,
+      "max": 0.73694,
+      "detect_rate": 0.545,
+      "scan_first_hit": 77,
+      "scan_pass": false
+    },
+    "nmap -sU (UDP) 100 port": {
+      "min": 0.63127,
+      "max": 0.715,
+      "detect_rate": 0.0,
+      "scan_first_hit": null,
+      "scan_pass": false
+    },
+    "nmap -sS ไล่ host (port 22 x100)": {
+      "min": 0.61793,
+      "max": 0.64421,
+      "detect_rate": 0.0,
+      "scan_first_hit": null,
+      "scan_pass": false
+    },
+    "nmap -sn ไล่ host (ping sweep)": {
+      "min": 0.48888,
+      "max": 0.67111,
+      "detect_rate": 0.0,
+      "scan_first_hit": null,
+      "scan_pass": false
+    }
+  }
+}

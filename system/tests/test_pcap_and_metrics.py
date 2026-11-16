@@ -2,8 +2,8 @@
 import numpy as np
 import pytest
 
-from training import evaluate as ev
-from training.generate_data import load_packets_csv
+from training.pipeline import evaluate as ev
+from training.pipeline.generate_data import load_packets_csv
 
 
 def test_pcap_roundtrip_matches_capture_format(tmp_path):
@@ -11,7 +11,7 @@ def test_pcap_roundtrip_matches_capture_format(tmp_path):
     scapy_env()
     from scapy.all import ICMP, IP, TCP, UDP, Ether, wrpcap
 
-    from training.pcap_to_csv import convert, convert_folder
+    from training.pipeline.pcap_to_csv import convert, convert_folder
 
     pkts = [Ether() / IP(src="10.0.0.1", dst="10.0.0.2", ttl=64) / TCP(sport=50000, dport=443, flags="S"),
             Ether() / IP(src="10.0.0.2", dst="10.0.0.1", ttl=128) / UDP(sport=53, dport=50001),
@@ -43,7 +43,7 @@ def test_pcap_time_window(tmp_path):
     scapy_env()
     from scapy.all import IP, TCP, Ether, wrpcap
 
-    from training.pcap_to_csv import convert, convert_folder
+    from training.pipeline.pcap_to_csv import convert, convert_folder
 
     pkts = []
     for i in range(100):                                      # 1 packet ต่อวินาที ที่ t=1000..1099
