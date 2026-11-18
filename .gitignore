@@ -24,3 +24,6 @@ data/soak_*.csv
 data/captured_*.csv
 # .pcap เต็ม (capture.save_pcap: true, v5) ใหญ่กว่า CSV มาก ไม่เคยถูกกันไว้มาก่อน
 data/captured_*.pcap
+
+# CSV ที่แปลงจาก pcap ด้วยตัวแปลง v5 (cache ใหม่)
+data/pcap_csv_v5/

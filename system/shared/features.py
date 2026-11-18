@@ -56,7 +56,10 @@ from collections import Counter, deque
 
 import numpy as np
 
-FEATURE_VERSION = 5
+FEATURE_VERSION = 6
+# v6 (Thitiwat, ชุดเทียบ): ตัด tcp_mss/tcp_wscale/tcp_sack_ok/tcp_ts_present ออกจาก FEATURE_NAMES (ยังเก็บใน PACKET_FIELDS/CSV)
+#   เหตุผล: 4 ตัวนี้มีค่าเฉพาะใน SYN/SYN-ACK -> SYN ปกติดูแปลก -> หาง score ปกติสูง -> threshold สูงจน ping หลุดหมด
+#   ผลเทรน v5 (40 ตัว) 2026-11-17: ping 0%, nmap 0/6 ภายใน 40 packet (ดู results/train_20261117_191511/notes.md)
 
 # คอลัมน์ metadata ดิบ (ตรงกับ PacketMsg และไฟล์ CSV ที่ capture-service บันทึก)
 PACKET_FIELDS = [
@@ -87,8 +90,8 @@ FEATURE_NAMES = [
     # v4 (A-F)
     "ctx_same_endpoint", "ctx_bytes", "ctx_half_open", "ctx_beacon_cv",
     "dns_qlen", "ctx_dns_qrate", "ctx_resp_ports",
-    # v5 (G-I)
-    "tcp_window", "tcp_mss", "tcp_wscale", "tcp_sack_ok", "tcp_ts_present",
+    # v5 (G-I) -- v6: ตัด tcp_mss/tcp_wscale/tcp_sack_ok/tcp_ts_present ออก (ดูหมายเหตุที่ FEATURE_VERSION)
+    "tcp_window",
     "dns_qtype", "dns_rcode", "tls_sni_known",
 ]
 N_FEATURES = len(FEATURE_NAMES)
@@ -148,10 +151,6 @@ def header_detail_features(meta: dict) -> list[float]:
     พวกนี้ให้ครบเหมือน stack จริงอยู่แล้ว"""
     return [
         float(_num(meta.get("tcp_window"), 0)),
-        float(_num(meta.get("tcp_mss"), 0)),
-        float(_num(meta.get("tcp_wscale"), 0)),
-        float(_num(meta.get("tcp_sack_ok"), 0)),
-        float(_num(meta.get("tcp_ts_present"), 0)),
         float(_num(meta.get("dns_qtype"), 0)),
         float(_num(meta.get("dns_rcode"), 0)),
         float(_num(meta.get("tls_sni_known"), 0)),
