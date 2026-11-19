@@ -99,15 +99,38 @@ def test_ping_only_mode_flags_only_icmp_echo():
 
 
 def test_realtime_mode_prints_every_packet_but_keeps_one_db_row(tmp_path):
+    # force_terminal=True: ให้ rich.live.Live คิดว่าเป็น terminal จริง ไม่งั้นมันไม่ re-render ทีละเฟรมเข้า
+    # buffer เลย (เหมาะกับการทดสอบในนี้ที่อยาก assert เนื้อหาแต่ละเฟรม)
     now = [100.0]
     out = io.StringIO()
-    mgr = AlertManager(tmp_path / "r.db", cooldown=10, console=Console(file=out, width=160),
+    mgr = AlertManager(tmp_path / "r.db", cooldown=10, console=Console(file=out, width=160, force_terminal=True),
                        clock=lambda: now[0], realtime=True)
-    for i in range(4):                                    # ping 4 ครั้ง ห่างกัน 1 วินาที
-        mgr.handle(det(ts=1000.0 + i))
+    for i in range(4):                                    # ping 4 ครั้ง ห่างกัน 1 วินาที (เกิน throttle 0.5s
+        mgr.handle(det(ts=1000.0 + i))                    # ของ print_repeat ทุกครั้ง เลยไม่ถูกข้ามสักอัน)
         now[0] += 1
+    mgr._close_open_line()                                # ปิด Live ที่เปิดค้างไว้ ก่อนอ่าน buffer (ไม่ปิด DB)
     text = out.getvalue()
-    assert text.count("ALERT") == 4                       # ขึ้นทุก packet แบบ realtime
-    assert "ALERT #2" in text and "ALERT #4" in text and "ICMP echo request" in text
+    # 5 ไม่ใช่ 4: Live.stop() re-render เฟรมสุดท้ายซ้ำอีกทีตอนปิด (เนื้อหาเดิมเป๊ะ -- ในจอจริงทับกันเฉยๆ
+    # มองไม่เห็นผลต่าง) แต่ละ packet ยังเขียนลง buffer ครบ (เขียนทับกันในจอจริงด้วย \r\x1b[2K)
+    assert text.count("ALERT") == 5
+    assert "ALERT x2" in text and "ALERT x4" in text and "ICMP echo request" in text
     assert mgr.db.execute("SELECT COUNT(*), SUM(count) FROM alerts").fetchone() == (1, 4)
+    mgr.close()
+
+
+def test_realtime_mode_throttles_rapid_repeats_but_db_still_counts_every_packet(tmp_path):
+    """flood รัวๆ ภายในเวลาสั้นมาก (เร็วกว่า REPEAT_PRINT_INTERVAL) -- เขียนทับจอน้อยรอบลง แต่ DB ยังนับครบ"""
+    now = [100.0]
+    out = io.StringIO()
+    mgr = AlertManager(tmp_path / "r.db", cooldown=10, console=Console(file=out, width=160, force_terminal=True),
+                       clock=lambda: now[0], realtime=True)
+    for _ in range(50):                                    # ยิงรัว ไม่ขยับเวลาเลย (เร็วกว่า throttle มาก)
+        mgr.handle(det(ts=1000.0))
+    mgr._close_open_line()
+    text = out.getvalue()
+    # ตัวที่ 3-50 ถูก throttle หมด (เวลาไม่ขยับเลย) เหลือแค่: print_alert ตัวแรก + Live เปิด "x2"
+    # + Live.stop() re-render ซ้ำตอนปิด (ยังเป็น "x2" เพราะไม่เคย .update() ต่อเลย) = 3 ไม่ใช่ 50
+    assert text.count("ALERT") == 3
+    assert "ALERT x2" in text and "ALERT x50" not in text
+    assert mgr.db.execute("SELECT COUNT(*), SUM(count) FROM alerts").fetchone() == (1, 50)
     mgr.close()

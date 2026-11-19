@@ -1,4 +1,4 @@
-"""การเทรนจริง (feature -> fit -> threshold -> save) ใช้ร่วมกันระหว่าง train.py และ train.ipynb (ไม่พึ่ง pandas)
+"""การเทรนจริง (feature -> fit -> threshold -> save) ที่ train.ipynb เรียกใช้ (ไม่พึ่ง pandas)
 ชุดทดสอบจำลอง (ping/nmap) ที่ run_training() เรียกไว้รายงานผลเท่านั้น อยู่แยกที่ scenarios.py"""
 from __future__ import annotations
 
@@ -125,8 +125,7 @@ def run_training(cfg: dict | None = None, packets_csv=None, verbose: bool = True
 
 def save_artifacts(model, scaler, threshold: float, n_samples: int, source: str,
                    cfg: dict | None = None, extra: dict | None = None) -> dict[str, Path]:
-    """บันทึกโมเดล + scaler + meta.json ไปที่ path ใน config (detection-service โหลดจากที่นี่)
-    ใช้ร่วมกันทั้ง train.py และ train.ipynb"""
+    """บันทึกโมเดล + scaler + meta.json ไปที่ path ใน config (detection-service โหลดจากที่นี่)"""
     cfg = cfg or load_config()
     dcfg = cfg["detection"]
     paths = {k: resolve_path(dcfg[k]) for k in ("model_path", "scaler_path", "meta_path")}
@@ -184,8 +183,8 @@ def print_report(res: dict) -> None:
 
 
 def save_report(res: dict, run_dir: Path | None = None) -> Path:
-    """บันทึกผลเทรนรอบนี้ลง results/train_<เวลา>/ (report.md + metrics.json) ให้ train.py มี record
-    ถาวรเหมือน train.ipynb (ที่เก็บไว้ในเซลล์ notebook เอง ไม่ได้ใช้ฟังก์ชันนี้) แทนที่จะ print ขึ้นจอแล้วหาย"""
+    """บันทึกผลเทรนรอบนี้ลง results/train_<เวลา>/ (report.md + metrics.json) ให้มี record ถาวร
+    แทนที่จะ print ขึ้นจอแล้วหาย (ไม่ได้ถูกเรียกจาก train.ipynb เอง — notebook เก็บผลไว้ในเซลล์ตัวเองแทน)"""
     run_dir = run_dir or resolve_path("results") / time.strftime("train_%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "report.md").write_text(format_report(res), encoding="utf-8")

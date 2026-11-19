@@ -45,8 +45,7 @@ Notebook params come from `config.yaml` (`training.*`, `feature.window_sec`) and
 6. Metrics (`training/pipeline/evaluate.py`): TP/FP/TN/FN, Accuracy, Precision, Recall, F1, FPR, Specificity, Balanced Acc, ROC-AUC, per-label rate, plots (confusion, ROC, score hist).
 7. `save_artifacts` → `system/models/` + meta.json (`recommended_threshold`, `test_metrics`). Restart services to load.
 - Default run (no pcaps): Acc 0.966, Prec 0.986, Recall 0.909, F1 0.946, FPR 0.006, AUC 0.991, thr 0.6308.
-- CLI alternative: `python training/pipeline/generate_data.py`, `python training/train.py [--source a.csv b.csv] [--keep-icmp-echo] [--plot]`.
-- Live capture to CSV: `capture.mode: csv|both` → `data/captured_packets.csv` (same columns, appended) → notebook adds it to train data when `USE_CAPTURED = True` (or `train.py --source`).
+- Live capture to CSV: `capture.mode: csv|both` → `data/captured_packets.csv` (same columns, appended) → notebook adds it to train data when `USE_CAPTURED = True`.
 - Source balance (notebook): `MAX_TRAIN_PER_SOURCE` (200k) samples rows **after** feature build (ctx_* need contiguous packets); `ICMP_MIN_FRAC` (0.01) duplicates non-echo ICMP rows. Without these, 2M CIC Monday rows (98%) drowned ICMP → ping 0% detected; 0.3% ICMP was not enough once real traffic was added (sim pings 62–75%).
 - Home data: `EXTRA_NORMAL_CSVS` (e.g. `data/home_discord_normal.csv`: Discord voice = UDP 19294–19344 to Cloudflare 104.29.x, was ~8% false alerts before it was in training) and `EXTRA_TEST_CSVS` (`data/home_test_session2.csv`, labelled via labels.csv rules for iPhone 192.168.1.34 ping + Fing scan). Results per run → `results/train_<time>/` (report.md, png, metrics.json); live tests → `results/*.md`.
 - **FEATURE_VERSION 3 (2026-11-13)**: +`ctx_unans_ports` / `ctx_unans_ports_long` (5 s / 60 s) = distinct dst ports a src opened a *new* connection to (TCP SYN w/o ACK, or UDP that is not a reply to a flow the other side opened) that got no acceptance (reply from that port; RST / ICMP unreachable / silence = not accepted). Scans: 100–1000; all normal traffic incl. CIC servers, Discord, games: ≤10. Fixes UDP scan (-sU) being hidden by CIC DNS-server replies and home UDP. `ProbeTracker` in `shared/features.py` (needs both directions — capture sees them). Old models are rejected by detection-service (version check) → retrain.
@@ -97,15 +96,13 @@ python -m pytest
 | `training/pipeline/generate_data.py` | synthetic traffic generator + CSV load/save |
 | `training/pipeline/common.py` | features→train→eval→threshold→save (pure training logic only) |
 | `training/pipeline/scenarios.py` | simulated ping/nmap test packets + `scan_report` — test-only, split out of `common.py` so train logic and attack-simulation code don't live in the same file; `run_training()` imports from here just to report pass/fail, not to train on |
-| `training/train.ipynb` | **primary trainer**: pcap→CSV, train, labelled eval, metrics, save |
+| `training/train.ipynb` | **the only trainer**: pcap→CSV, train, labelled eval, metrics, save |
 | `training/pipeline/pcap_to_csv.py`, `evaluate.py` | pcap converter (folder cache) / labels + metrics + plots |
 | `training/pcap/{normal,test}/`, `labels.csv` | drop-in pcap folders + label rules |
-| `training/train.py` | CLI trainer (no labelled eval); also writes `results/train_<time>/report.md`+`metrics.json`+plot now (added 2026-11-16, matches what the notebook already did) |
 | `system/models/` | joblib model, scaler, meta.json |
 | `data/` | CSVs, alerts.db |
 | `system/tests/` | features, scoring (ping + nmap), alert cooldown, bus, pcap converter, labels, metrics |
 | `run_all.py/.ps1/.sh`, `system/scripts/list_interfaces.py` | launchers, interface lister |
-| `system/docs/README_pdf.html` | source of README.pdf (render: Edge `--headless=new --print-to-pdf`) |
 
 ## 9. Docker (optional; see `DOCKER.md` for full detail)
 - `Dockerfile` + `docker-compose.yml` + `requirements-runtime.txt` (slim: no jupyter/matplotlib/pandas, those are training-only) + `config/config.docker.yaml` (`capture.interfaces: [any, loopback]`, `ping_only: false`). `system/models/`, `data/`, `config/` are bind-mounted, not baked into the image — retraining on the host takes effect without a rebuild.
@@ -158,8 +155,7 @@ discussed but not built) rather than more TLS parsing.
 **Small, concrete fixes still open:**
 - `test_every_ping_flagged_at_recommended_threshold` fails by 0.0007 (sec. 5, v5 entry) — synthetic-data
   sensitivity from adding 8 dimensions, not a logic bug; likely resolves once retrained on more diverse
-  real data, or needs the same kind of per-protocol/per-source balancing `MAX_TRAIN_PER_SOURCE` already
-  does for the notebook, but for `train.py`'s simpler path too.
+  real data.
 - Not yet tested: real SPAN, interactive Ctrl+C, Docker on Linux, A–F/G–I features against the 5 attack
   scripts (`C:\Project_AI\nids-attack-tests\`) with a model trained on real + diverse data.
 - Slow scans (`-T0/-T1`) evade the 5 s window. IPv6 ignored. SQLi/XSS/RCE/payload-level attacks are out of

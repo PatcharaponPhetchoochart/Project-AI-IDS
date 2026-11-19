@@ -5,6 +5,6 @@ shared/     โค้ดที่ใช้ร่วมกัน (features.py = �
 models/     โมเดลที่เทรนแล้ว (train.ipynb บันทึกให้อัตโนมัติ) ห้ามลบ ไม่งั้นระบบไม่ทำงาน
 tests/      ชุดทดสอบ: รัน python -m pytest จากโฟลเดอร์หลัก
 scripts/    list_interfaces.py ดูชื่อ network interface: python system/scripts/list_interfaces.py
-docs/       ต้นฉบับ HTML ของ README.pdf
+docs/       ต้นฉบับ HTML ของ FIRST_STEP.pdf
 
 ของที่ต้องใช้อยู่ข้างนอก: config/ (ตั้งค่า), training/ (เทรน), data/ (ข้อมูล + alerts.db), run_all.py (รันระบบ)

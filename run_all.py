@@ -77,8 +77,7 @@ def main() -> int:
     if missing:
         print("Model files not found:", *missing, sep="\n  ")
         print("Train the model first (one time):\n"
-              "  python -m notebook training/train.ipynb   then Run All\n"
-              "  (or command line: python training/train.py)")
+              "  python -m notebook training/train.ipynb   then Run All")
         return 2
 
     if not is_admin():

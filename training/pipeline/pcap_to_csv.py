@@ -8,8 +8,8 @@
   python training/pipeline/pcap_to_csv.py a.pcap b.pcapng -o data/mix.csv --max-packets 2000000
   python training/pipeline/pcap_to_csv.py Friday-WorkingHours.pcap -o data/cic_friday_scan.csv \
       --start 2017-07-07T13:50:00-03:00 --end 2017-07-07T15:35:00-03:00   # อ่านเฉพาะช่วงเวลา
-แล้วเทรน:
-  python training/train.py --source data/normal_packets.csv data/cic_monday.csv
+แล้วเทรน: เปิด training/train.ipynb แล้วกด Run All (วาง CSV ที่ได้ไว้ใน training/pcap/normal/
+หรือ test/ ก่อน หรือเพิ่ม path เข้า EXTRA_NORMAL_CSVS/EXTRA_TEST_CSVS ใน cell 2)
 """
 from __future__ import annotations
 
@@ -261,7 +261,7 @@ def main() -> None:
     s = convert(pcaps, out, args.iface, args.max_packets, start=args.start, end=args.end)
     print(f"เสร็จใน {time.time() - t0:.1f} วินาที -> {out}")
     print(f"  อ่าน {s['read']:,} | เขียน {s['written']:,} | ข้าม (ไม่ใช่ IPv4) {s['skipped_non_ipv4']:,} | error {s['errors']:,}")
-    print(f"ขั้นต่อไป: python training/train.py --source data/normal_packets.csv {args.out}")
+    print(f"ขั้นต่อไป: วาง {args.out} ไว้ใน training/pcap/normal/ หรือ test/ แล้วเปิด training/train.ipynb กด Run All")
 
 
 if __name__ == "__main__":

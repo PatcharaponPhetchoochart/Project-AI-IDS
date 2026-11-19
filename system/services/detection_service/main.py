@@ -32,7 +32,7 @@ def load_model(dcfg: dict, log):
     missing = [str(p) for p in (model_p, scaler_p, meta_p) if not p.exists()]
     if missing:
         log.error("model files not found: %s", ", ".join(missing))
-        log.error("train the model first: open training/train.ipynb and Run All (or: python training/train.py)")
+        log.error("train the model first: open training/train.ipynb and Run All")
         sys.exit(2)
     model = joblib.load(model_p)
     scaler = joblib.load(scaler_p)
